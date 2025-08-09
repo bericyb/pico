@@ -1,0 +1,119 @@
+return {
+  DB = 'sqlite:db.db',
+  ROUTES = {
+    [''] = {
+      VIEW = {
+        LINKS = {
+          'login',
+        },
+      },
+    },
+    ['login'] = {
+      VIEW = {
+        POSTFORM = {
+          TITLE = 'Login',
+          FIELDS = {
+            { name = 'username', type = 'text', label = 'Username' },
+            { name = 'password', type = 'password', label = 'Password' },
+          },
+          BUTTONS = {
+            { name = 'login', type = 'submit', label = 'Login' },
+          },
+        },
+      },
+      POST = {
+        SQL = 'login.sql',
+        POLICY = 'true',
+        SETJWT = function(obj, jwt)
+          return {
+            userId = obj.id,
+            teamId = obj.teamId,
+          }
+        end,
+      },
+    },
+    ['logout'] = {
+      POST = {
+        SQL = 'logout.sql',
+        POLICY = 'true',
+        SETJWT = function()
+          return nil
+        end,
+      },
+    },
+    ['user/:id/profile'] = {
+      GET = {
+        SQL = 'getUser.sql',
+        POLICY = function(obj, jwt)
+          if obj.id == jwt.userId then
+            return true
+          else
+            return false
+          end
+        end,
+      },
+      PUT = {
+        SQL = 'updateUser.sql',
+        POLICY = function(obj, jwt)
+          if obj.id == jwt.userId then
+            return true
+          else
+            return false
+          end
+        end,
+      },
+      POST = {
+        SQL = 'createUser.sql',
+        POLICY = 'true',
+      },
+      DELETE = {
+        SQL = 'deleteUser.sql',
+        POLICY = function(obj, jwt)
+          if obj.id == jwt.userId then
+            return true
+          else
+            return false
+          end
+        end,
+      },
+    },
+    ['team?id'] = {
+      GET = {
+        SQL = 'getTeam.sql',
+        POLICY = function(obj, jwt)
+          if obj.id == jwt.teamId then
+            return true
+          else
+            return false
+          end
+        end,
+      },
+      PUT = {
+        SQL = 'updateTeam.sql',
+        POLICY = function(obj, jwt)
+          if obj.id == jwt.teamId then
+            return true
+          else
+            return false
+          end
+        end,
+      },
+      POST = {
+        SQL = 'createTeam.sql',
+        POLICY = function()
+          return true
+        end,
+      },
+      DELETE = {
+        SQL = 'deleteTeam.sql',
+        POLICY = function(obj, jwt)
+          if obj.id == jwt.teamId then
+            return true
+          else
+            return false
+          end
+        end,
+      },
+    },
+  },
+}

@@ -1,0 +1,31 @@
+# You can optionally overwrite any config value with the env object
+# env: ${example.env}
+
+secret-key: secret_key_keep_it_safe
+log-level: DEBUG
+
+db-connection: psql:yourdb:54321
+
+jwt: {
+  userId: string
+}
+
+Middlewares:
+  - Authorized
+  - Public
+
+routes: 
+	- Authorized:
+		- user: {
+			get: getUser.sql
+			post: createUser.sql
+			patch: updateUser.sql
+			delete: deleteUser.sql
+		}
+	- Public:
+		- public_user: {
+			get: getPublicUser.sql
+		}
+		- login: {
+		    post: loginUser.sql, createJWT
+			
