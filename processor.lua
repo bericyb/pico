@@ -12,9 +12,6 @@ function PROCESSOR:init(config_file)
     return
   end
 
-  -- This is naive and we'll need to change this later
-  -- ie. converting routes into a data structure that
-  -- allows for easier and faster pattern matching
   local config = config_chunk()
   for k, v in pairs(config) do
     print('adding key: ', k, 'value: ', inspect(v))
@@ -45,8 +42,6 @@ function PROCESSOR:init(config_file)
       end
     end
   end
-
-  print(inspect(self.ROUTE_TREE))
 end
 
 function PROCESSOR:execute_request(request)
@@ -56,7 +51,7 @@ function PROCESSOR:execute_request(request)
   -- the request.
   --
   -- At runtime, the request's path may be user/123/status
-  -- and we must account for that.
+  -- and we must account for that with a '*' entry in the table
   --
   -- Path will not contain query parameters since the http
   -- parser has moved them to the params field of request
@@ -65,7 +60,6 @@ function PROCESSOR:execute_request(request)
   local splits = path:gmatch '([^/]*)'
   local segments = {}
   for i in splits do
-    print('path request segments', i)
     if i ~= '' then
       table.insert(segments, i)
     end
@@ -77,29 +71,41 @@ function PROCESSOR:execute_request(request)
     if tree[seg] then
       print('found segment match', seg)
       tree = tree[seg]
-      print(inspect(tree))
     elseif tree['*'] then
       print('found wildcard match for', seg)
       route_params[tree['*']['$name']] = seg
       tree = tree['*']
-      print(inspect(tree))
     else
-      print 'no match found returning NOT_FOUND'
-      return utils.NOT_FOUND
+      return nil, utils.NOT_FOUND
     end
   end
 
-  print('indentified route', tree['$route'])
+  local route = tree['$route']
 
-  if not PROCESSOR.ROUTES[tree['$route']][request.method:upper()] then
-    return utils.NOT_FOUND
+  if not PROCESSOR.ROUTES[route][request.method:upper()] then
+    return nil, utils.NOT_FOUND
   end
-
+  -- Adding parsed route parameters to body
   for k, v in pairs(route_params) do
     request.body[k] = v
   end
 
-  return 'FOUND'
+  local route_definition = PROCESSOR.ROUTES[route][request.method:upper()]
+
+  -- 1. Execute SQL
+  local sql_file_name = route_definition.SQL
+  local res, revert = SQL.execute_sql(request.body, sql_file_name)
+
+  -- 2. Run policy
+  if !route_definition.POLICY(res, jwt) then
+    revert()
+    return utils.UNAUTHORIZED
+  end
+
+  -- 3. SetJWT
+  jwt = route_definition.SETJWT(res, jwt)
+
+  return 'All good!'
 end
 
 return PROCESSOR
