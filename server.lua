@@ -1,5 +1,5 @@
 return {
-  DB = 'sqlite:db.db',
+  DB = 'main.db',
   ROUTES = {
     [''] = {
       VIEW = {
@@ -23,7 +23,6 @@ return {
       },
       POST = {
         SQL = 'login.sql',
-        POLICY = 'true',
         SETJWT = function(obj, jwt)
           return {
             userId = obj.id,
@@ -32,10 +31,17 @@ return {
         end,
       },
     },
+    ['ping'] = {
+      POST = {
+        SQL = 'pong.sql',
+      },
+      GET = {
+        SQL = 'pong.sql',
+      },
+    },
     ['logout'] = {
       POST = {
         SQL = 'logout.sql',
-        POLICY = 'true',
         SETJWT = function()
           return nil
         end,
@@ -64,7 +70,6 @@ return {
       },
       POST = {
         SQL = 'createUser.sql',
-        POLICY = 'true',
       },
       DELETE = {
         SQL = 'deleteUser.sql',

@@ -1,5 +1,6 @@
 local utils = require 'http.utils'
 local inspect = require 'inspect'
+local SQL = require 'sql.sql'
 
 PROCESSOR = {}
 
@@ -42,9 +43,14 @@ function PROCESSOR:init(config_file)
       end
     end
   end
+
+  self.SQL = SQL:init(self.DB)
+  print(inspect(self))
+  print(inspect(self.SQL))
+  return self
 end
 
-function PROCESSOR:execute_request(request)
+function PROCESSOR:process_request(request)
   -- Routes can be defined with route parameters signified
   -- by a colon. ie. user/:id/status where id is the name
   -- of the parameter. id will parsed into the body of
@@ -82,30 +88,43 @@ function PROCESSOR:execute_request(request)
 
   local route = tree['$route']
 
-  if not PROCESSOR.ROUTES[route][request.method:upper()] then
-    return nil, utils.NOT_FOUND
+  local route_definition = PROCESSOR.ROUTES[route][request.method:upper()]
+  if route == nil or not PROCESSOR.ROUTES[route][request.method:upper()] then
+    -- Check for a view method if a Get doesn't exist
+    if request.method:upper() == 'GET' and PROCESSOR.ROUTES[route]['VIEW'] then
+      route_definition = PROCESSOR.ROUTES[route]['VIEW']
+    else
+      print 'route method not found'
+      return nil, utils.NOT_FOUND
+    end
   end
+
   -- Adding parsed route parameters to body
   for k, v in pairs(route_params) do
     request.body[k] = v
   end
 
-  local route_definition = PROCESSOR.ROUTES[route][request.method:upper()]
-
   -- 1. Execute SQL
   local sql_file_name = route_definition.SQL
-  local res, revert = SQL.execute_sql(request.body, sql_file_name)
+  local res, commit, revert = self.SQL:execute_sql(request.body, sql_file_name)
+
+  local jwt = request.headers['authorization']
 
   -- 2. Run policy
-  if !route_definition.POLICY(res, jwt) then
-    revert()
-    return utils.UNAUTHORIZED
+  if route_definition.POLICY then
+    if not route_definition.POLICY(res, jwt) then
+      revert()
+      return nil, utils.UNAUTHORIZED
+    end
   end
+  commit()
 
   -- 3. SetJWT
-  jwt = route_definition.SETJWT(res, jwt)
+  if route_definition.SETJWT then
+    jwt = route_definition.SETJWT(res, jwt)
+  end
 
-  return 'All good!'
+  return res, nil
 end
 
 return PROCESSOR

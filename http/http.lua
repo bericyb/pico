@@ -1,8 +1,10 @@
 local utils = require 'http.utils'
+local cjson = require 'cjson'
+local inspect = require 'inspect'
 
-HTTP_PARSER = {}
+HTTP = {}
 
-function HTTP_PARSER:parse_stream(stream)
+function HTTP:parse_stream(stream)
   ---@type string, string | nil
   local line, err = stream:receive '*l'
   if err then
@@ -58,11 +60,7 @@ function HTTP_PARSER:parse_stream(stream)
 
       utils.parse_content(req)
 
-      -- Handle the fully parsed out request :)
-      ---@type string
-      local response = self.processor:process_request(req)
-
-      stream:send(response)
+      return req
     end
   else
     stream:send(utils.BAD_REQUEST)
@@ -70,4 +68,22 @@ function HTTP_PARSER:parse_stream(stream)
   end
 end
 
-return HTTP_PARSER
+function HTTP:build_response(req, body)
+  local content_type = req.headers['content-type']
+  local resp = utils.OK .. 'Server: Pico\r\n'
+  if content_type == 'text/html' or content_type == 'Text/HTML' then
+    for _, text in ipairs(body) do
+      local len = #text
+
+      resp = resp .. 'Content-Type: text/html\r\nContent-Length: ' .. len .. '\r\n\r\n' .. text
+    end
+  else
+    local encoded = cjson.encode(body)
+    local len = #encoded
+    resp = resp .. 'Content-Type: application/json\r\nContent-Length: ' .. len .. '\r\n\r\n' .. encoded
+  end
+
+  return resp
+end
+
+return HTTP
