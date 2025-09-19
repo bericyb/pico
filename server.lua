@@ -2,22 +2,24 @@ return {
   DB = 'main.db',
   ROUTES = {
     [''] = {
-      VIEW = {
-        LINKS = {
-          'login',
+      GET = {
+        VIEW = {
+          LINKS = {
+            'login',
+          },
         },
       },
     },
     ['login'] = {
-      VIEW = {
-        POSTFORM = {
-          TITLE = 'Login',
-          FIELDS = {
-            { name = 'username', type = 'text', label = 'Username' },
-            { name = 'password', type = 'password', label = 'Password' },
-          },
-          BUTTONS = {
-            { name = 'login', type = 'submit', label = 'Login' },
+      GET = {
+        VIEW = {
+          POSTFORM = {
+            TITLE = 'Login',
+            FIELDS = {
+              { name = 'username', type = 'text', label = 'Username' },
+              { name = 'password', type = 'password', label = 'Password' },
+              { name = 'button', type = 'submit', value = 'Login', label = 'Login' },
+            },
           },
         },
       },

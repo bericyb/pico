@@ -15,6 +15,9 @@ end
 Proc = processor:init(config_file_path)
 
 local server = socket.bind('::', 3000)
+if server == nil then
+  error 'error binding on ::3000'
+end
 while 1 do
   local stream = server:accept()
   stream:settimeout(10) -- Set a timeout of 10 seconds for client operations
@@ -23,11 +26,11 @@ while 1 do
   if not req then
     stream:close()
   else
-    local resp, err = Proc:process_request(req)
+    local resp, jwt, err = Proc:process_request(req)
     if err ~= nil then
       stream:send(err)
     else
-      local http_resp = http:build_response(req, resp)
+      local http_resp = http:build_response(req, resp, jwt)
       stream:send(http_resp)
     end
   end

@@ -1,6 +1,7 @@
 local utils = require 'http.utils'
 local inspect = require 'inspect'
 local SQL = require 'sql.sql'
+local html = require 'html.renderer'
 
 PROCESSOR = {}
 
@@ -9,7 +10,7 @@ function PROCESSOR:init(config_file)
   local config_chunk, err = loadfile(config_file)
   if not config_chunk then
     print('Config file: ' .. config_file .. ' was not not able to load properly exiting now.')
-    print(err)
+    error(err)
     return
   end
 
@@ -26,20 +27,18 @@ function PROCESSOR:init(config_file)
     local segments = k:gmatch '([^/]*)'
     local current_branch
     for seg in segments do
-      if seg ~= '' then
-        local seg_name = seg
-        print('segment here', seg)
-        if string.find(seg, '^:') then
-          seg_name = seg:match '^:(.*)'
-          seg = '*'
-        end
-        if not current_branch then
-          self.ROUTE_TREE[seg] = { ['$name'] = seg_name, ['$route'] = k }
-          current_branch = self.ROUTE_TREE[seg]
-        else
-          current_branch[seg] = { ['$name'] = seg_name, ['$route'] = k }
-          current_branch = current_branch[seg]
-        end
+      local seg_name = seg
+      print('segment here', seg)
+      if string.find(seg, '^:') then
+        seg_name = seg:match '^:(.*)'
+        seg = '*'
+      end
+      if not current_branch then
+        self.ROUTE_TREE[seg] = { ['$name'] = seg_name, ['$route'] = k }
+        current_branch = self.ROUTE_TREE[seg]
+      else
+        current_branch[seg] = { ['$name'] = seg_name, ['$route'] = k }
+        current_branch = current_branch[seg]
       end
     end
   end
@@ -63,26 +62,34 @@ function PROCESSOR:process_request(request)
   -- parser has moved them to the params field of request
   ---@type string
   local path = request.path
-  local splits = path:gmatch '([^/]*)'
+  print('full path', path)
+  local splits = path:gmatch '([^/]+)'
   local segments = {}
-  for i in splits do
-    if i ~= '' then
-      table.insert(segments, i)
-    end
+  for seg in splits do
+    table.insert(segments, seg)
   end
 
   local route_params = {}
   local tree = PROCESSOR.ROUTE_TREE
-  for _, seg in ipairs(segments) do
-    if tree[seg] then
-      print('found segment match', seg)
-      tree = tree[seg]
-    elseif tree['*'] then
-      print('found wildcard match for', seg)
-      route_params[tree['*']['$name']] = seg
-      tree = tree['*']
-    else
-      return nil, utils.NOT_FOUND
+  if #segments == 0 and tree[''] then
+    tree = tree['']
+  else
+    for _, seg in ipairs(segments) do
+      if seg ~= '' then
+        if tree[seg] then
+          print('found segment match', seg)
+          tree = tree[seg]
+        elseif tree['*'] then
+          print('found wildcard match for', seg)
+          route_params[tree['*']['$name']] = seg
+          tree = tree['*']
+        else
+          print '404 route not found'
+          return nil, nil, utils.NOT_FOUND
+        end
+      else
+        break
+      end
     end
   end
 
@@ -90,13 +97,8 @@ function PROCESSOR:process_request(request)
 
   local route_definition = PROCESSOR.ROUTES[route][request.method:upper()]
   if route == nil or not PROCESSOR.ROUTES[route][request.method:upper()] then
-    -- Check for a view method if a Get doesn't exist
-    if request.method:upper() == 'GET' and PROCESSOR.ROUTES[route]['VIEW'] then
-      route_definition = PROCESSOR.ROUTES[route]['VIEW']
-    else
-      print 'route method not found'
-      return nil, utils.NOT_FOUND
-    end
+    print 'route method not found'
+    return nil, nil, utils.NOT_FOUND
   end
 
   -- Adding parsed route parameters to body
@@ -114,17 +116,41 @@ function PROCESSOR:process_request(request)
   if route_definition.POLICY then
     if not route_definition.POLICY(res, jwt) then
       revert()
-      return nil, utils.UNAUTHORIZED
+      return nil, nil, utils.UNAUTHORIZED
     end
   end
   commit()
 
   -- 3. SetJWT
   if route_definition.SETJWT then
+    -- Gotta do a bit more here...
     jwt = route_definition.SETJWT(res, jwt)
   end
 
-  return res, nil
+  -- 4. If the client prefers text/html and View is set, render out the page
+  local accept = 'application/json'
+  local accepts = request.headers['accept']:gmatch '([^,]*)'
+  for accept_type in accepts do
+    print('accept field', accept_type)
+    if accept_type == 'text/html' or accept_type == 'application/json' then
+      accept = accept_type
+      break
+    end
+  end
+  if accept == 'text/html' and route_definition.VIEW then
+    res = html:render_html(route_definition.VIEW, res)
+  elseif route_definition.VIEW == nil then
+    accept = 'application/json'
+  end
+
+  local response = {
+    body = res,
+    content_type = accept,
+  }
+
+  print('Heres the response', inspect(response))
+
+  return response, jwt, nil
 end
 
 return PROCESSOR

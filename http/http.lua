@@ -1,6 +1,5 @@
 local utils = require 'http.utils'
 local cjson = require 'cjson'
-local inspect = require 'inspect'
 
 HTTP = {}
 
@@ -68,17 +67,16 @@ function HTTP:parse_stream(stream)
   end
 end
 
-function HTTP:build_response(req, body)
-  local content_type = req.headers['content-type']
+function HTTP:build_response(req, response, jwt)
   local resp = utils.OK .. 'Server: Pico\r\n'
-  if content_type == 'text/html' or content_type == 'Text/HTML' then
-    for _, text in ipairs(body) do
-      local len = #text
-
-      resp = resp .. 'Content-Type: text/html\r\nContent-Length: ' .. len .. '\r\n\r\n' .. text
-    end
+  if jwt then
+    resp = resp .. string.format('Authorization: Bearer %s\r\n', jwt)
+  end
+  if response.content_type == 'text/html' or response.content_type == 'Text/HTML' then
+    local len = #response.body
+    resp = resp .. 'Content-Type: text/html\r\nContent-Length: ' .. len .. '\r\n\r\n' .. response.body
   else
-    local encoded = cjson.encode(body)
+    local encoded = cjson.encode(response.body)
     local len = #encoded
     resp = resp .. 'Content-Type: application/json\r\nContent-Length: ' .. len .. '\r\n\r\n' .. encoded
   end
