@@ -1,5 +1,5 @@
 pub mod html {
-    use mlua::{FromLua, Lua, Table, Value};
+    use mlua::{FromLua, Lua, Value};
     use serde::Deserialize;
 
     use crate::route::route::Method;
@@ -86,58 +86,58 @@ pub mod html {
 
                                 view.entities.push(Entity::Links(links));
                             }
-                            "POSTFORM" |  "PUTFORM" |  "DELETEFORM" => {
+                            "POSTFORM" | "PUTFORM" | "DELETEFORM" => {
                                 let title = match def.get("TITLE") {
                                     Ok(t) => t,
                                     Err(e) => {
-                                            return Err(mlua::Error::FromLuaConversionError {
-                                                from: "Table",
-                                                to: "View".to_string(),
-                                                message: Some(format!(
-                                                    "invalid pico config: {} view TITLE is not a string {}",
-                                                    view_type, e
-                                                )),
-                                            });
-                                    } 
+                                        return Err(mlua::Error::FromLuaConversionError {
+                                            from: "Table",
+                                            to: "View".to_string(),
+                                            message: Some(format!(
+                                                "invalid pico config: {} view TITLE is not a string {}",
+                                                view_type, e
+                                            )),
+                                        });
+                                    }
                                 };
 
                                 let fields: Vec<Field> = match def.get("FIELDS") {
                                     Ok(f) => f,
                                     Err(e) => {
-                                            return Err(mlua::Error::FromLuaConversionError {
-                                                from: "Table",
-                                                to: "View".to_string(),
-                                                message: Some(format!(
-                                                    "invalid pico config: {} view fields is not a table of field values {}",
-                                                    view_type, e
-                                                )),
-                                            });
-                                    } 
-                                }
+                                        return Err(mlua::Error::FromLuaConversionError {
+                                            from: "Table",
+                                            to: "View".to_string(),
+                                            message: Some(format!(
+                                                "invalid pico config: {} view fields is not a table of field values {}",
+                                                view_type, e
+                                            )),
+                                        });
+                                    }
+                                };
 
                                 let method: Method = match view_type.as_str() {
-                                    "POSTFORM" => {
-                                        Method::POST
-                                    },
-                                    "PUTFORM" => {
-                                        Method::PUT
-                                    }
-                                    "DELETEFORM" => {
-                                        Method::DELETE
-                                    }
+                                    "POSTFORM" => Method::POST,
+                                    "PUTFORM" => Method::PUT,
+                                    "DELETEFORM" => Method::DELETE,
                                     _ => {
-                                            return Err(mlua::Error::FromLuaConversionError {
-                                                from: "Table",
-                                                to: "View".to_string(),
-                                                message: Some(format!(
-                                                    "invalid pico config: {} view form type is not a POSTFORM, PUTFORM, or DELETEFORM",
-                                                    view_type
-                                                )),
-                                            });
+                                        return Err(mlua::Error::FromLuaConversionError {
+                                            from: "Table",
+                                            to: "View".to_string(),
+                                            message: Some(format!(
+                                                "invalid pico config: {} view form type is not a POSTFORM, PUTFORM, or DELETEFORM",
+                                                view_type
+                                            )),
+                                        });
                                     }
-                                } ;
-                                let form = Form { method, title, fields };
-                            },
+                                };
+                                let form = Form {
+                                    method,
+                                    title,
+                                    fields,
+                                };
+
+                                view.entities.push(Entity::Form(form));
+                            }
                             "MARKDOWN" => {}
                             "TABLE" => {}
                             other => {
@@ -162,20 +162,25 @@ pub mod html {
     }
 
     impl FromLua for Field {
-    fn from_lua(value: Value, _lua: &Lua) -> mlua::Result<Self> {
-        if let Value::Table(t) = value {
-            let name: Option<String> = t.get("name")?;
-            let field_type: String = t.get("field_type")?;
-            let label: Option<String> = t.get("label")?;
-            let value: Option<String> = t.get("value")?;
-            return Ok(Field { name, field_type, label, value })
-        } else {
-            return Err(mlua::Error::FromLuaConversionError {
-                from: value.type_name(),
-                to: "Field".to_string(),
-                message: Some("expected table".to_string()),
-            })
+        fn from_lua(value: Value, _lua: &Lua) -> mlua::Result<Self> {
+            if let Value::Table(t) = value {
+                let name: Option<String> = t.get("name")?;
+                let field_type: String = t.get("type")?;
+                let label: Option<String> = t.get("label")?;
+                let value: Option<String> = t.get("value")?;
+                return Ok(Field {
+                    name,
+                    field_type,
+                    label,
+                    value,
+                });
+            } else {
+                return Err(mlua::Error::FromLuaConversionError {
+                    from: value.type_name(),
+                    to: "Field".to_string(),
+                    message: Some("expected table".to_string()),
+                });
+            }
         }
     }
-}
 }

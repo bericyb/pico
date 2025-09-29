@@ -1,7 +1,7 @@
 pub mod route {
-    use std::{collections::HashMap, fmt};
+    use std::{collections::HashMap, fmt, string};
 
-    use mlua::Function;
+    use mlua::{FromLua, Function, Lua, Value};
     use serde::Deserialize;
 
     use crate::html::html::View;
@@ -32,6 +32,47 @@ pub mod route {
                 Method::SSE => "SSE",
             };
             write!(f, "{}", s)
+        }
+    }
+
+    impl FromLua for Method {
+        fn from_lua(value: Value, _lua: &Lua) -> mlua::Result<Self> {
+            match value {
+                Value::String(method) => {
+                    let method_string = match method.to_str() {
+                        Ok(s) => s.to_string(),
+                        Err(_) => {
+                            return Err(mlua::Error::FromLuaConversionError {
+                        from: "String",
+                        to: "pico::route::Method".to_string(),
+                        message: Some("invalid route method type, expected strings GET | POST | PUT | DELETE | WS | SSE".to_string()),
+                            });
+                        }
+                    };
+                    match method_string.as_str() {
+                        "GET" => return Ok(Method::GET),
+                        "POST" => return Ok(Method::POST),
+                        "PUT" => return Ok(Method::PUT),
+                        "DELETE" => return Ok(Method::DELETE),
+                        "WS" => return Ok(Method::WS),
+                        "SSE" => return Ok(Method::SSE),
+                        _ => {
+                            return Err(mlua::Error::FromLuaConversionError {
+                        from: "String",
+                        to: "pico::route::Method".to_string(),
+                        message: Some("invalid route method type, expected GET | POST | PUT | DELETE | WS | SSE".to_string()),
+                            });
+                        }
+                    };
+                }
+                _ => {
+                    return Err(mlua::Error::FromLuaConversionError {
+                        from: "String",
+                        to: "pico::route::Method".to_string(),
+                        message: Some("invalid route method type, expected string".to_string()),
+                    });
+                }
+            }
         }
     }
     #[derive(Debug, PartialEq)]

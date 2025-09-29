@@ -5,7 +5,7 @@ pub mod route;
 pub mod sql;
 use std::{collections::HashMap, fs::File, io::Read, net::TcpListener};
 
-use mlua::{Lua, LuaSerdeExt, Table};
+use mlua::{Lua, Table};
 
 use crate::{
     cron::cron::Crons,
@@ -21,7 +21,7 @@ pub struct PicoService {
     sql: SQL,
     db: String,
     routes: HashMap<String, Route>,
-    crons: Crons,
+    crons: Option<Crons>,
 }
 
 struct PicoRequest {
@@ -79,13 +79,21 @@ pub fn init_pico(
 
     let (db, routes, crons) = validate_pico_config(pico_config_table)?;
 
+    let sql = initialize_sql(db)
+
     return Ok(PicoService {
         lua,
-        sql: todo!(),
+        sql,
         db,
         routes,
         crons,
     });
+}
+
+pub fn initialize_sql(conn_str: String) -> SQL {
+
+    let pool_size: usize = 5;
+
 }
 
 pub fn start_http_server(pico: PicoService) -> std::io::Result<()> {
@@ -103,7 +111,7 @@ pub fn start_http_server(pico: PicoService) -> std::io::Result<()> {
 // Validate and serialize fields from pico configurations
 pub fn validate_pico_config(
     config: mlua::Table,
-) -> Result<(String, HashMap<String, Route>, Crons), String> {
+) -> Result<(String, HashMap<String, Route>, Option<Crons>), String> {
     let db: String;
     match config.get("DB") {
         Ok(l_db) => {
@@ -117,7 +125,7 @@ pub fn validate_pico_config(
         }
     };
 
-    let routes: HashMap<String, Route>;
+    let routes: HashMap<String, Route> = HashMap::new();
     let routes_table: Table;
     match config.get("ROUTES") {
         Ok(l_routes) => {
@@ -142,8 +150,8 @@ pub fn validate_pico_config(
             }
         };
 
-        let definitions: HashMap<Method, RouteHandler>;
-        for handler_def in handlers.pairs::<String, Table>() {
+        let mut definitions: HashMap<Method, RouteHandler> = HashMap::new();
+        for handler_def in handlers.pairs::<Method, Table>() {
             let (method, handler) = match handler_def {
                 Ok(handler_def) => handler_def,
                 Err(e) => {
@@ -154,27 +162,12 @@ pub fn validate_pico_config(
                 }
             };
 
-            let pico_method = match method.as_str() {
-                "GET" => Method::GET,
-                "PUT" => Method::PUT,
-                "POST" => Method::POST,
-                "DELETE" => Method::DELETE,
-                "WS" => Method::WS,
-                "SSE" => Method::SSE,
-                m => {
-                    return Err(format!(
-                        "invalid pico config: Route {} is defined with an unknown method {}",
-                        path, m
-                    ));
-                }
-            };
-
             let view: Option<View> = match handler.get("VIEW") {
                 Ok(v) => v,
                 Err(e) => {
                     return Err(format!(
                         "invalid pico config: Route {}: {} has VIEW but is not properly shaped {}",
-                        path, pico_method, e
+                        path, method, e
                     ));
                 }
             };
@@ -184,7 +177,7 @@ pub fn validate_pico_config(
                 Err(e) => {
                     return Err(format!(
                         "invalid pico config: Route {}: {} has SQL  but is not a string {}",
-                        path, pico_method, e
+                        path, method, e
                     ));
                 }
             };
@@ -194,7 +187,7 @@ pub fn validate_pico_config(
                 Err(e) => {
                     return Err(format!(
                         "invalid pico config: Route {}: {} has SETJWT but is not a fucntion {}",
-                        path, pico_method, e
+                        path, method, e
                     ));
                 }
             };
@@ -204,24 +197,28 @@ pub fn validate_pico_config(
                 Err(e) => {
                     return Err(format!(
                         "invalid pico config: Route {}: {} has TRANSFORM but is not a function {}",
-                        path, pico_method, e
+                        path, method, e
                     ));
                 }
             };
 
-            RouteHandler {
-                view,
-                sql,
-                set_jwt,
-                transform,
-            };
+            definitions.insert(
+                method,
+                RouteHandler {
+                    view,
+                    sql,
+                    set_jwt,
+                    transform,
+                },
+            );
         }
     }
 
-    let crons: Crons = match config.get("CRONS") {
-        Ok(c) => c,
-        Err(e) => return Err(format!("invalid pico config: CRONS field not found. {}", e)),
-    };
+    // let crons: Option<Crons> = match config.get("CRONS") {
+    //     Ok(c) => c,
+    //     Err(e) => return Err(format!("invalid pico config: CRONS field not found. {}", e)),
+    // };
+    //
 
-    return Ok((db, routes, crons));
+    return Ok((db, routes, None));
 }
