@@ -8,6 +8,7 @@ pub mod sql {
 
     use chrono::DateTime;
     use postgres::{Client, NoTls};
+    use regex::Regex;
 
     pub struct SQL {
         connection: Client,
@@ -15,25 +16,73 @@ pub mod sql {
     }
 
     pub struct Sproc {
-        sql: String,
+        sql: String, // A parameterized version of the sql where the parameter names are replaced with indexes.
+        parameters: Vec<String>, // A vector of parameter names in order of insertion in the sql statement
     }
 
     /// LMAO why do we worry about pool size if we're single threaded 0.0
-    pub fn initialize_sql_service(conn_str: String, _pool_size: usize) -> Result<SQL, String> {
+    pub fn initialize_sql_service(conn_str: &String) -> Result<SQL, String> {
         let mut connection = match Client::connect(conn_str.as_str(), NoTls) {
             Ok(c) => c,
             Err(e) => return Err(format!("error connecting to database, {}", e)),
         };
 
-        migrate_db(&mut connection);
+        match migrate_db(&mut connection) {
+            Ok(_) => {}
+            Err(e) => return Err(format!("error migrating database, {}", e)),
+        }
 
-        let mut sprocs = load_sprocs();
+        let sprocs = match load_sprocs() {
+            Ok(s) => s,
+            Err(e) => return Err(format!("error loading sql sprocs: {}", e)),
+        };
 
-        return Err("Error setting up sql database".to_string());
+        return Ok(SQL { connection, sprocs });
     }
 
+    /// Load up a hashmap of sql scripts to run at runtime
+    /// In the future we should allow for nested folders of sprocs
+    /// so that we make more complex apps.
     fn load_sprocs() -> Result<HashMap<String, Sproc>, Box<dyn std::error::Error>> {
-        Ok(HashMap::new())
+        let dir_entries = match fs::read_dir("db/sprocs/") {
+            Ok(e) => e,
+            Err(e) => {
+                return Err(format!(
+                    "failed to read db/sprocs/ directory for stored sql scripts: {}",
+                    e
+                )
+                .into());
+            }
+        };
+
+        let mut sprocs = HashMap::new();
+        for entry in dir_entries {
+            let entry = entry?;
+            if entry.path().is_file() {
+                let mut f = File::open(entry.path())?;
+
+                let mut sql = String::new();
+                f.read_to_string(&mut sql)?;
+
+                let mut parameters: Vec<String> = Vec::new();
+                let r = Regex::new(r"\$(\w+)").unwrap();
+                for params in r.find_iter(&sql) {
+                    parameters.push(params.as_str().to_string());
+                }
+
+                for (i, param) in parameters.iter().enumerate() {
+                    sql = sql.replace(format!("${}", param).as_str(), (i + 1).to_string().as_str());
+                }
+
+                let file_name = match entry.file_name().to_str() {
+                    Some(n) => n.to_string(),
+                    None => continue,
+                };
+
+                sprocs.insert(file_name, Sproc { sql, parameters });
+            }
+        }
+        Ok(sprocs)
     }
 
     fn migrate_db(connection: &mut Client) -> Result<(), Box<dyn std::error::Error>> {

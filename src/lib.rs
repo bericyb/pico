@@ -12,10 +12,9 @@ use crate::{
     html::html::View,
     http::http::{Body, handle_stream},
     route::route::{Method, Route, RouteHandler},
-    sql::sql::SQL,
+    sql::sql::{SQL, initialize_sql_service},
 };
 
-#[derive(Debug)]
 pub struct PicoService {
     lua: Lua,
     sql: SQL,
@@ -37,7 +36,7 @@ struct PicoRequest {
 ///
 /// If no path is provided then the current working dir is searched
 /// for pico.lua and *.env
-pub fn init_pico(
+pub fn create_pico_service(
     config_path: Option<String>,
     _env_file_path: Option<String>,
 ) -> Result<PicoService, String> {
@@ -79,7 +78,10 @@ pub fn init_pico(
 
     let (db, routes, crons) = validate_pico_config(pico_config_table)?;
 
-    let sql = initialize_sql(db)
+    let sql = match initialize_sql_service(&db) {
+        Ok(sql) => sql,
+        Err(e) => return Err(format!("error initializing sql database: {}", e)),
+    };
 
     return Ok(PicoService {
         lua,
@@ -90,24 +92,19 @@ pub fn init_pico(
     });
 }
 
-pub fn initialize_sql(conn_str: String) -> SQL {
+impl PicoService {
+    pub fn start_http_server(&self) -> std::io::Result<()> {
+        // For now let's just bind on 8080.
+        // TODO: Get port from pico config
+        let listener = TcpListener::bind("127.0.0.1:8080")?;
 
-    let pool_size: usize = 5;
+        for stream in listener.incoming() {
+            handle_stream(stream?)
+        }
 
-}
-
-pub fn start_http_server(pico: PicoService) -> std::io::Result<()> {
-    // For now let's just bind on 8080.
-    // TODO: Get port from pico config
-    let listener = TcpListener::bind("127.0.0.1:8080")?;
-
-    for stream in listener.incoming() {
-        handle_stream(stream?)
+        return Ok(());
     }
-
-    return Ok(());
 }
-
 // Validate and serialize fields from pico configurations
 pub fn validate_pico_config(
     config: mlua::Table,
