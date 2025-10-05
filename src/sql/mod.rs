@@ -9,15 +9,78 @@ pub mod sql {
     use chrono::DateTime;
     use postgres::{Client, NoTls};
     use regex::Regex;
+    use serde_json::Value;
+
+    use crate::http::http::ResponseCode;
 
     pub struct SQL {
-        connection: Client,
-        sprocs: HashMap<String, Sproc>,
+        pub connection: Client,
+        pub sprocs: HashMap<String, Sproc>,
     }
 
     pub struct Sproc {
-        sql: String, // A parameterized version of the sql where the parameter names are replaced with indexes.
-        parameters: Vec<String>, // A vector of parameter names in order of insertion in the sql statement
+        pub sql: String, // A parameterized version of the sql where the parameter names are replaced with indexes.
+        pub parameters: Vec<String>, // A vector of parameter names in order of insertion in the sql statement
+    }
+
+    impl Sproc {
+        pub fn execute(
+            &self,
+            client: &mut Client,
+            input: HashMap<String, Value>,
+        ) -> Result<Value, ResponseCode> {
+            let mut ingestion_params = vec![];
+            for param in self.parameters.clone() {
+                match input.get(&param) {
+                    Some(p) => ingestion_params.push(p.clone()),
+                    None => return Err(ResponseCode::BadRequest),
+                }
+            }
+
+            let ingestion_bytes = match serde_json::to_vec(&ingestion_params) {
+                Ok(ib) => ib,
+                Err(e) => {
+                    println!("failure converting to bytes before executing sproc {}", e);
+                    return Err(ResponseCode::InternalError);
+                }
+            };
+
+            let res = match client.query(&self.sql, &[&ingestion_bytes]) {
+                Ok(r) => r,
+                Err(e) => {
+                    println!(
+                        "error querying database with sproc: {} : Input: {:?} : Error: {}",
+                        &self.sql, ingestion_bytes, e
+                    );
+                    return Err(ResponseCode::InternalError);
+                }
+            };
+
+            let mut results: Vec<Value> = vec![];
+            for row in res {
+                let mut json_row = serde_json::Map::new();
+                for col in row.columns() {
+                    let name = col.name();
+                    let value: Value = match row.try_get(name) {
+                        Ok(val) => val,
+                        Err(e) => {
+                            println!("error getting column {} from result row: {}", name, e);
+                            continue;
+                        }
+                    };
+                    json_row.insert(name.to_string(), value);
+                }
+                results.push(Value::Object(json_row));
+            }
+
+            if results.len() == 0 {
+                return Ok(Value::Null);
+            } else if results.len() == 1 {
+                return Ok(results[1].clone());
+            } else {
+                return Ok(Value::Array(results));
+            }
+        }
     }
 
     /// LMAO why do we worry about pool size if we're single threaded 0.0
@@ -106,6 +169,7 @@ pub mod sql {
             Err(e) => return Err(format!("db error while applying migrations: {}", e).into()),
         };
 
+        // TODO: allow for custom migrations directory in pico config
         let dir_entries = match fs::read_dir("db/migrations/") {
             Ok(des) => des,
             Err(e) => {

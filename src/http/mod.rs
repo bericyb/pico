@@ -1,16 +1,11 @@
 pub mod http {
     use httparse::{EMPTY_HEADER, Request};
+    use regex::Regex;
     use serde_json::Value;
-    use std::{
-        collections::HashMap,
-        io::{Read, Write},
-        net::TcpStream,
-        time::Duration,
-        vec,
-    };
+    use std::{collections::HashMap, io::Read, net::TcpStream, time::Duration, vec};
     use url::Url;
 
-    use crate::PicoRequest;
+    use crate::{PicoRequest, route::route::Method};
 
     const STREAM_BUFFER_SIZE: usize = 1024;
     const MAX_HEADER_SIZE: usize = 64;
@@ -19,8 +14,40 @@ pub mod http {
         QueryParams(HashMap<String, String>),
         Raw(Vec<u8>),
     }
-    pub fn handle_stream(mut stream: TcpStream) {
-        let response = loop {
+
+    pub enum ResponseCode {
+        Ok,
+        NotFound,
+        InternalError,
+        BadRequest,
+        HeaderFieldsTooLarge,
+    }
+
+    impl ResponseCode {
+        pub fn to_str(&self) -> &str {
+            match self {
+                ResponseCode::Ok => "OK",
+                ResponseCode::NotFound => "Not Found",
+                ResponseCode::InternalError => "Internal Server Error",
+                ResponseCode::BadRequest => "Bad Request",
+                ResponseCode::HeaderFieldsTooLarge => "Header Fields Too Large",
+            }
+        }
+        pub fn to_bytes(&self) -> &[u8] {
+            match self {
+                ResponseCode::Ok => b"HTTP/1.1 200 OK\r\n\r\n",
+                ResponseCode::NotFound => b"HTTP/1.1 404 Not Found\r\n\r\n",
+                ResponseCode::InternalError => b"HTTP/1.1 500 Internal Server Error\r\n\r\n",
+                ResponseCode::BadRequest => b"HTTP/1.1 400 Bad Request\r\n\r\n",
+                ResponseCode::HeaderFieldsTooLarge => {
+                    b"HTTP/1.1 431 Header Fields Too Large\r\n\r\n"
+                }
+            }
+        }
+    }
+
+    pub fn handle_stream(stream: &mut TcpStream) -> Result<PicoRequest, ResponseCode> {
+        loop {
             let mut headers = [EMPTY_HEADER; MAX_HEADER_SIZE];
             let mut cursor = 0;
             let mut request_headers = Request::new(&mut headers);
@@ -29,8 +56,7 @@ pub mod http {
 
             if n == 0 {
                 println!("Bad stream with no bytes");
-                break b"HTTP/1.1 400 Bad Request\r\nContent-Length: 0\r\nConnection: close\r\n\r\n"
-                .to_vec();
+                break Err(ResponseCode::BadRequest);
             }
 
             cursor += n;
@@ -43,32 +69,28 @@ pub mod http {
                 httparse::Status::Complete(body_start) => {
                     if body_start == 1 {
                         println!("Bad request with no body");
-                        break b"HTTP/1.1 400 Bad Request\r\nContent-Length: 0\r\nConnection: close\r\n\r\n".to_vec();
+                        break Err(ResponseCode::BadRequest);
                     }
-                    let response =
-                        handle_request(request_headers, &buf[body_start..cursor], &mut stream);
 
-                    break response;
+                    break parse_to_pico_request(request_headers, &buf[body_start..cursor], stream);
                 }
                 httparse::Status::Partial => {
                     if cursor > MAX_HEADER_SIZE {
                         println!("Request headers too large");
-                        break b"HTTP/1.1 431 Request Header Fields Too Large\r\nContent-Length: 0\r\nConnection: close\r\n\r\n".to_vec();
+                        break Err(ResponseCode::HeaderFieldsTooLarge);
                     } else {
                         continue;
                     }
                 }
             }
-        };
-
-        let written = stream.write(&response);
+        }
     }
 
-    fn handle_request(
+    fn parse_to_pico_request(
         request_headers: httparse::Request,
         read_body: &[u8],
         stream: &mut TcpStream,
-    ) -> Vec<u8> {
+    ) -> Result<PicoRequest, ResponseCode> {
         let header_map: HashMap<_, _> = request_headers
             .headers
             .iter()
@@ -97,7 +119,7 @@ pub mod http {
             }
             Err(e) => {
                 println!("error reading exact body from TcpStream: {}", e);
-                return vec![];
+                return Err(ResponseCode::BadRequest);
             }
         };
 
@@ -118,9 +140,9 @@ pub mod http {
                 body = Body::Json(json);
             }
             "application/x-www-form-urlencoded" => {
-                let path_str = request_headers.path.unwrap_or("");
-                let url =
-                    Url::parse(&format!("http://localhost{}", String::from(path_str))).unwrap();
+                let path_str = request_headers.path.unwrap_or("/");
+                let url = Url::parse(&format!("http://localhost:3000{}", String::from(path_str)))
+                    .unwrap();
                 body = Body::QueryParams(
                     url.query_pairs()
                         .into_iter()
@@ -137,18 +159,55 @@ pub mod http {
             }
         }
 
+        let mut path = String::new();
+        let mut query: HashMap<String, String> = HashMap::new();
+        let split_path: Vec<&str> = request_headers.path.unwrap_or("/").split('?').collect();
+        if split_path.len() == 1 {
+            path = split_path[0].to_string();
+        } else if split_path.len() == 2 {
+            path = split_path[0].to_string();
+            let query_string = split_path[1];
+            if query_string != "" {
+                query = parse_query_parameters(query_string);
+            }
+        }
+
+        let method: Method = match request_headers.method.unwrap_or("GET").parse() {
+            Ok(m) => m,
+            Err(_) => Method::GET,
+        };
+
         // Put the request headers and the body together for a complete request
-        let pico_request = PicoRequest {
-            method: request_headers.method.unwrap_or("GET").to_string(),
-            path: request_headers.path.unwrap_or("/").to_string(),
+        Ok(PicoRequest {
+            method,
+            path,
+            query,
             version: request_headers.version.unwrap_or_default(),
             headers: header_map
                 .iter()
                 .map(|header| (header.0.to_string(), header.1.to_vec()))
                 .collect(),
             body,
-        };
+        })
+    }
 
-        return b"HTTP/1.1 200 Success\r\nContent-Length: 0\r\nConnection: close\r\n\r\n".to_vec();
+    fn parse_query_parameters(query: &str) -> HashMap<String, String> {
+        let mut queries: HashMap<String, String> = HashMap::new();
+
+        let r = Regex::new(r"(\w+)=(\w+)").unwrap();
+
+        for caps in r.captures_iter(query) {
+            let key = match caps.get(1) {
+                Some(c) => c,
+                None => continue,
+            };
+            let value = match caps.get(2) {
+                Some(c) => c,
+                None => continue,
+            };
+            queries.insert(key.as_str().to_string(), value.as_str().to_string());
+        }
+
+        return queries;
     }
 }

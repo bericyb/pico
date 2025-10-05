@@ -1,5 +1,5 @@
 pub mod route {
-    use std::{collections::HashMap, fmt, string};
+    use std::{collections::HashMap, fmt, str::FromStr};
 
     use mlua::{FromLua, Function, Lua, Value};
     use serde::Deserialize;
@@ -8,7 +8,15 @@ pub mod route {
 
     #[derive(Debug, PartialEq)]
     pub struct Route {
-        definitions: HashMap<Method, RouteHandler>,
+        pub definitions: HashMap<Method, RouteHandler>,
+    }
+
+    #[derive(Debug, PartialEq)]
+    pub struct RouteHandler {
+        pub view: Option<View>,
+        pub sproc_name: Option<String>, // Name of sproc to execute on request
+        pub set_jwt: Option<Function>,  // A lua function that sets the JWT for a user
+        pub transform: Option<Function>, // A lua function that transforms the data for a request
     }
 
     #[derive(Eq, Deserialize, Debug, Hash, PartialEq)]
@@ -32,6 +40,26 @@ pub mod route {
                 Method::SSE => "SSE",
             };
             write!(f, "{}", s)
+        }
+    }
+
+    impl FromStr for Method {
+        type Err = ();
+        fn from_str(string: &str) -> Result<Self, Self::Err> {
+            let m = match string.to_lowercase().as_str() {
+                "get" => Method::GET,
+                "post" => Method::POST,
+                "put" => Method::PUT,
+                "delete" => Method::DELETE,
+                // TODO: not sure what ws or sse method is
+                "ws_upgrade?" => Method::WS,
+                "sse" => Method::SSE,
+                _ => {
+                    println!("unknown method type {}", string);
+                    return Err(());
+                }
+            };
+            Ok(m)
         }
     }
 
@@ -74,12 +102,5 @@ pub mod route {
                 }
             }
         }
-    }
-    #[derive(Debug, PartialEq)]
-    pub struct RouteHandler {
-        pub view: Option<View>,
-        pub sql: Option<String>, // Name of sql file to execute on request
-        pub set_jwt: Option<Function>, // A lua function that sets the JWT for a user
-        pub transform: Option<Function>, // A lua function that transforms the data for a request
     }
 }

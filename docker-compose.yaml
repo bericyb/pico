@@ -1,0 +1,10 @@
+services:
+  pico-db:
+    image: postgres
+    restart: always
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: password
+      POSTGRES_DB: pico
+    ports:
+      - "5432:5432"

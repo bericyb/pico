@@ -1,5 +1,5 @@
 return {
-  DB = 'main.db',
+  DB = 'postgresql://postgres:password@0.0.0.0:5432/pico',
   ROUTES = {
     [''] = {
       GET = {
