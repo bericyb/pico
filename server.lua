@@ -84,7 +84,7 @@ return {
         end,
       },
     },
-    ['team?id'] = {
+    ['team'] = {
       GET = {
         SQL = 'getTeam.sql',
         POLICY = function(obj, jwt)

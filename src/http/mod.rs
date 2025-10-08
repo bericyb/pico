@@ -8,7 +8,7 @@ pub mod http {
     use crate::{PicoRequest, route::route::Method};
 
     const STREAM_BUFFER_SIZE: usize = 1024;
-    const MAX_HEADER_SIZE: usize = 64;
+    const MAX_HEADER_SIZE: usize = 1024;
     pub enum Body {
         Json(Value),
         QueryParams(HashMap<String, String>),
@@ -67,11 +67,6 @@ pub mod http {
 
             match res {
                 httparse::Status::Complete(body_start) => {
-                    if body_start == 1 {
-                        println!("Bad request with no body");
-                        break Err(ResponseCode::BadRequest);
-                    }
-
                     break parse_to_pico_request(request_headers, &buf[body_start..cursor], stream);
                 }
                 httparse::Status::Partial => {
@@ -101,12 +96,15 @@ pub mod http {
             .unwrap_or_default()
             .parse()
             .unwrap_or_default();
+        println!("Content length found, {}", content_length);
         let mut body_bytes = vec![];
 
         body_bytes.extend_from_slice(read_body);
         let read_len = body_bytes.len();
 
-        let mut remaining_body: Vec<u8> = vec![0u8; content_length - read_len];
+        println!("Read body byte buffer len {}", read_len);
+
+        let mut remaining_body: Vec<u8> = vec![0u8; content_length];
 
         // TODO: add error handling here
         stream

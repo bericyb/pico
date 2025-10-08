@@ -36,6 +36,17 @@ pub struct RouteTree {
     parameter_name: String,
 }
 
+impl RouteTree {
+    pub fn to_string(&self) -> String {
+        let mut res = String::new();
+
+        for node in self.nodes.clone() {
+            res = res + &node.0 + ":\n\t" + &(node.1.clone()).to_string();
+        }
+        return res;
+    }
+}
+
 pub struct PicoRequest {
     pub method: Method,
     pub path: String,
@@ -90,7 +101,10 @@ pub fn create_pico_service(
         }
     };
 
-    let (db, routes, route_tree, crons) = validate_pico_config(pico_config_table)?;
+    let (db, routes, route_tree, crons) = match validate_pico_config(pico_config_table) {
+        Ok(r) => r,
+        Err(es) => return Err(format!("error validating pico config: {}", es)),
+    };
 
     let sql = match initialize_sql_service(&db) {
         Ok(sql) => sql,
@@ -157,40 +171,71 @@ impl PicoService {
 
         let mut tree = self.route_tree.clone();
 
+        println!("route tree {}", tree.to_string());
+
         let mut pico_route_path = String::new();
         let mut route_parameters: HashMap<String, String> = HashMap::new();
+        println!("working on request path: {}", request.path);
         for seg in request.path.split("/") {
+            if seg == "" {
+                println!("skipping empty segment");
+                continue;
+            }
+            println!("working on seg: {}", seg);
             match tree.nodes.get(&seg.to_string()) {
                 Some(subtree) => {
+                    println!("found match!");
                     pico_route_path = pico_route_path + &subtree.parameter_name;
                     tree = subtree.clone();
                 }
                 None => match tree.nodes.get(&"*".to_string()) {
                     Some(subtree) => {
+                        println!("Wildcard match found");
                         route_parameters.insert(subtree.parameter_name.clone(), seg.to_string());
                         pico_route_path = pico_route_path + &subtree.parameter_name;
                         tree = subtree.clone();
                     }
-                    None => return Err(ResponseCode::NotFound),
+                    None => {
+                        println!("no route match found, even with wildcard");
+                        return Err(ResponseCode::NotFound);
+                    }
                 },
             }
         }
 
+        println!("pico_route_path: {}", pico_route_path);
+
         let pico_route: &Route = match self.routes.get(&pico_route_path) {
             Some(r) => r,
-            None => return Err(ResponseCode::NotFound),
+            None => {
+                println!("no route handlers for {} found", pico_route_path);
+                return Err(ResponseCode::NotFound);
+            }
         };
 
         let route_handler = match pico_route.definitions.get(&request.method) {
             Some(rh) => rh,
-            None => return Err(ResponseCode::NotFound),
+            None => {
+                println!(
+                    "no route handler for {} found with method {}",
+                    pico_route_path,
+                    request.method.to_string()
+                );
+                return Err(ResponseCode::NotFound);
+            }
         };
 
         match &route_handler.sproc_name {
             Some(sproc_name) => {
                 let sproc = match self.sql.sprocs.get(&sproc_name.clone()) {
                     Some(s) => s,
-                    None => return Err(ResponseCode::InternalError),
+                    None => {
+                        println!(
+                            "internal error getting sproc {} for route {}",
+                            sproc_name, pico_route_path,
+                        );
+                        return Err(ResponseCode::InternalError);
+                    }
                 };
                 let mut sproc_input: HashMap<String, Value> = HashMap::new();
                 match request.body {
@@ -225,7 +270,7 @@ impl PicoService {
                         }
                     }
                     Body::Raw(_items) => {
-                        println!("Gotta figure out raw sql input");
+                        println!("Gotta figure out raw input into sql...");
                         todo!();
                     }
                 }
@@ -241,10 +286,17 @@ impl PicoService {
                     Err(rc) => return Err(rc),
                 }
             }
-            None => (),
+            None => {
+                println!("no sproc found for {}", pico_route_path);
+                ()
+            }
         }
 
-        Ok(vec![])
+        // TODO: TRANSFORM
+        // TODO: SETJWT
+        // TODO: POLICY
+
+        Err(ResponseCode::Ok)
     }
 }
 
@@ -265,7 +317,7 @@ pub fn validate_pico_config(
         }
     };
 
-    let routes: HashMap<String, Route> = HashMap::new();
+    let mut routes: HashMap<String, Route> = HashMap::new();
     let routes_table: Table;
     match config.get("ROUTES") {
         Ok(l_routes) => {
@@ -278,6 +330,8 @@ pub fn validate_pico_config(
             ));
         }
     };
+
+    println!("routes table: {:#?}", routes_table);
 
     for route in routes_table.pairs::<String, Table>() {
         let (path, handlers) = match route {
@@ -352,6 +406,7 @@ pub fn validate_pico_config(
                 },
             );
         }
+        routes.insert(path, Route { definitions });
     }
 
     let mut route_tree = RouteTree {
@@ -361,6 +416,7 @@ pub fn validate_pico_config(
 
     // Create route tree
     for (route, _) in &routes {
+        println!("Creating route {}", route);
         for seg in route.split("/") {
             // TODO: is this correct and needs an underscore for lint?
             let mut _current = &mut route_tree;

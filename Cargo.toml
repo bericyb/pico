@@ -17,3 +17,11 @@ url = "2.5.7"
 
 [lib]
 path = "src/lib.rs"
+
+[[bin]]
+name = "pico_server"
+path = "src/main.rs"
+
+[[bin]]
+name = "scratchpad"
+path = "src/scratchpad/bin/main.rs"
