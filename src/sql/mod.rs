@@ -195,8 +195,7 @@ pub mod sql {
                 None => continue,
             };
 
-            let file_path_splits: Vec<&str> = file_path.split('.').into_iter().collect();
-            if file_path_splits.len() != 2 || file_path_splits[1] != "sql" {
+            if entry.path().extension() != Some(std::ffi::OsStr::new("sql")) {
                 println!(
                     "file {} is not a sql migration file. migration files follow the format <timestamp>:<migration_name>.sql",
                     file_path
@@ -204,7 +203,18 @@ pub mod sql {
                 continue;
             }
 
-            let file_name_splits: Vec<&str> = file_path_splits[0].split(':').into_iter().collect();
+            let file_name: String = match entry.file_name().to_str() {
+                Some(s) => s.to_string(),
+                None => {
+                    println!(
+                        "file {} is not a properly named migration file. migration files follow the format <timestamp>:<migration_name>.sql",
+                        file_path
+                    );
+                    continue;
+                }
+            };
+
+            let file_name_splits: Vec<&str> = file_name.split('%').into_iter().collect();
             if file_name_splits.len() != 2 {
                 println!(
                     "file {} is not a properly named migration file. migration files follow the format <timestamp>:<migration_name>.sql",
@@ -216,6 +226,7 @@ pub mod sql {
                 Some(dt_str) => match dt_str.parse() {
                     Ok(dt) => dt,
                     Err(e) => {
+                        println!("{}", dt_str);
                         println!(
                             "file {} does not have a valid timestamp. migration files follow the format <timestamp>:<migration_name>.sql: {}",
                             file_path, e

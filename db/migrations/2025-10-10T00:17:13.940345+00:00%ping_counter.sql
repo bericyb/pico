@@ -1,0 +1,4 @@
+CREATE TABLE IF NOT EXISTS ping_counter (
+    id SERIAL PRIMARY KEY,
+    timestamp TIMESTAMP NOT NULL DEFAULT NOW()
+);

@@ -6,10 +6,11 @@ pub mod sql;
 use std::{
     collections::HashMap,
     fs::File,
-    io::{Read, Write},
+    io::{self, Read, Write},
     net::TcpListener,
 };
 
+use chrono::{NaiveDateTime, Utc};
 use mlua::{Lua, Table};
 use serde_json::{Value, to_string};
 
@@ -119,6 +120,36 @@ pub fn create_pico_service(
         route_tree,
         crons,
     });
+}
+
+pub fn create_pico_migration() {
+    print!("Migration name:");
+    io::stdout().flush().unwrap();
+
+    let mut input = String::new();
+    io::stdin().read_line(&mut input).unwrap();
+
+    let input = input.trim();
+
+    if input == "" {
+        println!("Migration name required");
+        return;
+    }
+
+    let now = Utc::now().to_rfc3339();
+
+    let file_name = format!("db/migrations/{}%{}.sql", now, input);
+
+    let _file = match File::create(&file_name) {
+        Ok(f) => f,
+        Err(e) => {
+            println!("migration creation failed {}", e);
+            return;
+        }
+    };
+
+    println!("Migration file {} created.", &file_name);
+    return;
 }
 
 impl PicoService {
