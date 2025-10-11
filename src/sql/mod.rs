@@ -10,6 +10,7 @@ pub mod sql {
     use postgres::{Client, NoTls};
     use regex::Regex;
     use serde_json::Value;
+    use sqlparser::{dialect::PostgreSqlDialect, parser::Parser};
 
     use crate::http::http::ResponseCode;
 
@@ -19,8 +20,8 @@ pub mod sql {
     }
 
     pub struct Sproc {
-        pub sql: String, // A parameterized version of the sql where the parameter names are replaced with indexes.
-        pub parameters: Vec<String>, // A vector of parameter names in order of insertion in the sql statement
+        pub statements: Vec<String>, // Parameterized versions of each of the sql statements in a sproc where the parameter names are replaced with indexes.
+        pub parameters: Vec<String>, // Parameter names in order of insertion in the sql statement
     }
 
     impl Sproc {
@@ -45,16 +46,20 @@ pub mod sql {
                 }
             };
 
-            let res = match client.query(&self.sql, &[&ingestion_bytes]) {
-                Ok(r) => r,
-                Err(e) => {
-                    println!(
-                        "error querying database with sproc: {} : Input: {:?} : Error: {}",
-                        &self.sql, ingestion_bytes, e
-                    );
-                    return Err(ResponseCode::InternalError);
-                }
-            };
+            let mut res = vec![];
+
+            for sql in &self.statements {
+                res = match client.query(sql, &[&ingestion_bytes]) {
+                    Ok(r) => r,
+                    Err(e) => {
+                        println!(
+                            "error querying database with sproc: {} : Input: {:#?} : Error: {}",
+                            sql, ingestion_params, e
+                        );
+                        return Err(ResponseCode::InternalError);
+                    }
+                };
+            }
 
             let mut results: Vec<Value> = vec![];
             for row in res {
@@ -142,7 +147,26 @@ pub mod sql {
                     None => continue,
                 };
 
-                sprocs.insert(file_name, Sproc { sql, parameters });
+                let dialect = PostgreSqlDialect {};
+                let statements: Vec<String> = match Parser::parse_sql(&dialect, &sql) {
+                    Ok(s) => s.iter().enumerate().map(|x| x.1.to_string()).collect(),
+                    Err(e) => {
+                        return Err(format!(
+                            "error parsing sql in sproc {:#?}: {}",
+                            entry.file_name().to_os_string(),
+                            e
+                        )
+                        .into());
+                    }
+                };
+
+                sprocs.insert(
+                    file_name,
+                    Sproc {
+                        statements,
+                        parameters,
+                    },
+                );
             }
         }
         Ok(sprocs)

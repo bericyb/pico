@@ -10,7 +10,7 @@ use std::{
     net::TcpListener,
 };
 
-use chrono::{NaiveDateTime, Utc};
+use chrono::Utc;
 use mlua::{Lua, Table};
 use serde_json::{Value, to_string};
 
