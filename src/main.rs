@@ -1,4 +1,4 @@
-use rico::{create_pico_migration, create_pico_service};
+use rico::{create_pico_function, create_pico_migration, create_pico_service};
 
 fn main() -> std::io::Result<()> {
     match std::env::args().nth(1) {
@@ -9,6 +9,10 @@ fn main() -> std::io::Result<()> {
             }
             "migrate" | "m" => {
                 create_pico_migration();
+                return Ok(());
+            }
+            "function" | "f" => {
+                create_pico_function();
                 return Ok(());
             }
             _ => {}

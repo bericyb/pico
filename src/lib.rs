@@ -12,14 +12,14 @@ use std::{
 
 use chrono::Utc;
 use mlua::{Lua, Table};
-use serde_json::{Value, to_string};
+use serde_json::Value;
 
 use crate::{
     cron::cron::Crons,
     html::html::View,
     http::http::{Body, ResponseCode, handle_stream},
     route::route::{Method, Route, RouteHandler},
-    sql::sql::{SQL, initialize_sql_service},
+    sql::sql::{SQL, SQL_FUNCTION_TEMPLATE, initialize_sql_service},
 };
 
 pub struct PicoService {
@@ -52,8 +52,8 @@ pub struct PicoRequest {
     pub method: Method,
     pub path: String,
     pub query: HashMap<String, String>,
-    pub version: u8,
-    pub headers: HashMap<String, Vec<u8>>,
+    pub version: String,
+    pub headers: HashMap<String, Vec<String>>,
     pub body: Body,
 }
 
@@ -129,6 +129,7 @@ pub fn create_pico_migration() {
     let mut input = String::new();
     io::stdin().read_line(&mut input).unwrap();
 
+    input = input.replace(" ", "_");
     let input = input.trim();
 
     if input == "" {
@@ -136,9 +137,9 @@ pub fn create_pico_migration() {
         return;
     }
 
-    let now = Utc::now().to_rfc3339();
+    let now = Utc::now().timestamp();
 
-    let file_name = format!("db/migrations/{}%{}.sql", now, input);
+    let file_name = format!("db/migrations/{}:{}.sql", now, input);
 
     let _file = match File::create(&file_name) {
         Ok(f) => f,
@@ -149,6 +150,43 @@ pub fn create_pico_migration() {
     };
 
     println!("Migration file {} created.", &file_name);
+    return;
+}
+
+pub fn create_pico_function() {
+    print!("SQL function name:");
+    io::stdout().flush().unwrap();
+
+    let mut input = String::new();
+    io::stdin().read_line(&mut input).unwrap();
+
+    input = input.replace(" ", "_");
+    let input = input.trim();
+
+    if input == "" {
+        println!("Function name required");
+        return;
+    }
+
+    let file_path = format!("db/functions/{}.sql", input);
+
+    let mut file = match File::create_new(file_path) {
+        Ok(f) => f,
+        Err(e) => {
+            println!("function creation failed: {}", e);
+            return;
+        }
+    };
+
+    match file.write(SQL_FUNCTION_TEMPLATE) {
+        Ok(_) => {}
+        Err(e) => {
+            println!("function creation failed: {}", e);
+            return;
+        }
+    }
+
+    println!("Function file {} created.", &input);
     return;
 }
 
@@ -200,16 +238,12 @@ impl PicoService {
             request.path.as_str()
         );
 
-        let mut tree = self.route_tree.clone();
-
-        println!("route tree {}", tree.to_string());
+        let mut tree = &self.route_tree;
 
         let mut pico_route_path = String::new();
         let mut route_parameters: HashMap<String, String> = HashMap::new();
-        println!("working on request path: {}", request.path);
         for seg in request.path.split("/") {
             if seg == "" {
-                println!("skipping empty segment");
                 continue;
             }
             println!("working on seg: {}", seg);
@@ -217,14 +251,14 @@ impl PicoService {
                 Some(subtree) => {
                     println!("found match!");
                     pico_route_path = pico_route_path + &subtree.parameter_name;
-                    tree = subtree.clone();
+                    tree = &subtree;
                 }
                 None => match tree.nodes.get(&"*".to_string()) {
                     Some(subtree) => {
                         println!("Wildcard match found");
                         route_parameters.insert(subtree.parameter_name.clone(), seg.to_string());
                         pico_route_path = pico_route_path + &subtree.parameter_name;
-                        tree = subtree.clone();
+                        tree = &subtree;
                     }
                     None => {
                         println!("no route match found, even with wildcard");
@@ -256,22 +290,23 @@ impl PicoService {
             }
         };
 
-        match &route_handler.sproc_name {
-            Some(sproc_name) => {
-                let sproc = match self.sql.sprocs.get(&sproc_name.clone()) {
+        let json_body = match &route_handler.function_name {
+            Some(file_name) => {
+                let function_name = file_name.strip_suffix(".sql").unwrap_or(file_name);
+                let function = match self.sql.functions.get(function_name) {
                     Some(s) => s,
                     None => {
                         println!(
-                            "internal error getting sproc {} for route {}",
-                            sproc_name, pico_route_path,
+                            "internal error getting sql function {} for route {}",
+                            function_name, pico_route_path,
                         );
                         return Err(ResponseCode::InternalError);
                     }
                 };
-                let mut sproc_input: HashMap<String, Value> = HashMap::new();
+                let mut function_input: HashMap<String, Value> = HashMap::new();
                 match request.body {
                     Body::Json(j_body) => {
-                        for param in sproc.parameters.clone() {
+                        for param in function.parameters.clone() {
                             let val = match j_body.get(&param.clone()) {
                                 Some(b_val) => b_val,
                                 None => {
@@ -282,11 +317,11 @@ impl PicoService {
                                     }
                                 }
                             };
-                            sproc_input.insert(param, val.clone());
+                            function_input.insert(param, val.clone());
                         }
                     }
                     Body::QueryParams(hash_map) => {
-                        for param in sproc.parameters.clone() {
+                        for param in function.parameters.clone() {
                             let val = match hash_map.get(&param.clone()) {
                                 Some(qp) => qp,
                                 None => {
@@ -297,7 +332,7 @@ impl PicoService {
                                     }
                                 }
                             };
-                            sproc_input.insert(param, Value::String(val.clone()));
+                            function_input.insert(param, Value::String(val.clone()));
                         }
                     }
                     Body::Raw(_items) => {
@@ -306,28 +341,48 @@ impl PicoService {
                     }
                 }
 
-                match sproc.execute(&mut self.sql.connection, sproc_input) {
-                    Ok(value) => match to_string(&value) {
-                        Ok(js) => return Ok(js.into_bytes()),
-                        Err(e) => {
-                            println!("error converting json value to string: {}", e);
-                            return Err(ResponseCode::InternalError);
-                        }
-                    },
+                match function.execute(&mut self.sql.connection, function_input) {
+                    Ok(value) => value,
                     Err(rc) => return Err(rc),
                 }
             }
             None => {
-                println!("no sproc found for {}", pico_route_path);
-                ()
+                println!("no sql function found for {}", pico_route_path);
+                Value::Null
             }
-        }
+        };
 
         // TODO: TRANSFORM
         // TODO: SETJWT
         // TODO: POLICY
+        // TODO: VIEW
 
-        Err(ResponseCode::Ok)
+        let mut headers: HashMap<String, Vec<String>> = HashMap::new();
+        let binding = json_body.to_string();
+        let body_bytes = binding.as_bytes();
+        headers.insert(
+            "Content-Length".to_string(),
+            vec![format!("{}", body_bytes.len())],
+        );
+        headers.insert(
+            "Content-Type".to_string(),
+            vec!["application/json".to_string()],
+        );
+
+        let mut resp: String = "HTTP/1.1 200 OK\r\n".to_string();
+        for (k, vs) in headers {
+            resp = resp + &k + ": ";
+            for (i, v) in vs.clone().into_iter().enumerate() {
+                if i > 1 && i < vs.len() - 1 {
+                    resp = resp + "; ";
+                }
+                resp = resp + &v;
+            }
+            resp = resp + "\r\n";
+        }
+
+        resp = resp + "\r\n";
+        Ok((resp + &binding).as_bytes().to_vec())
     }
 }
 
@@ -431,7 +486,7 @@ pub fn validate_pico_config(
                 method,
                 RouteHandler {
                     view,
-                    sproc_name: sql,
+                    function_name: sql,
                     set_jwt,
                     transform,
                 },
