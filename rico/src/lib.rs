@@ -178,7 +178,7 @@ pub fn create_pico_function() {
         }
     };
 
-    match file.write(SQL_FUNCTION_TEMPLATE) {
+    match file.write(SQL_FUNCTION_TEMPLATE.replace("{name}", input).as_bytes()) {
         Ok(_) => {}
         Err(e) => {
             println!("function creation failed: {}", e);

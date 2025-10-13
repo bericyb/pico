@@ -41,6 +41,14 @@ return {
         SQL = 'pong.sql',
       },
     },
+    ['workout'] = {
+      POST = {
+        SQL = 'createWorkout.sql',
+      },
+      GET = {
+        SQL = 'getWorkouts.sql',
+      },
+    }
     ['logout'] = {
       POST = {
         SQL = 'logout.sql',

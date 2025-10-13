@@ -1,0 +1,76 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+	<meta charset="UTF-8">
+	<meta name="viewport" content="width=device-width, initial-scale=1.0">
+	<title>Pico Database</title>
+</head>
+
+<body>
+	<div>
+		<h1>Database Editor</h1>
+		<a href="index.html">Back to Dashboard</a>
+		<br>
+		<ul class="table-list">
+			<!-- Database items will be dynamically inserted here but for now staticly render fake data-->
+			<li>
+				<div>users</div>
+			</li>
+			<li>
+				<div>posts</div>
+			</li>
+			<li>
+				<div>comments</div>
+			</li>
+			<li>
+				<div>settings</div>
+			</li>
+			<li>
+				<div>
+					<form id="db-form" style="display: flex; flex-direction: row;">
+						<input type="text" id="db-name" name="db-name"
+							placeholder="new_table"><br><br>
+						<button type="submit">+</button>
+					</form>
+				</div>
+			</li>
+		</ul>
+		<ul class="function-list">
+			<!-- Function items will be dynamically inserted here but for now staticly render fake data-->
+			<li>
+				<div>addUser</div>
+			</li>
+			<li>
+				<div>deletePost</div>
+			</li>
+			<li>
+				<div>updateComment</div>
+			</li>
+			<li>
+				<div>getSettings</div>
+			</li>
+			<li>
+				<div>
+					<form id="function-form" style="display: flex; flex-direction: row;">
+						<input type="text" id="function-name" name="function-name"
+							placeholder="functionName"><br><br>
+						<button type="submit">+</button>
+					</form>
+				</div>
+			</li>
+		</ul>
+
+	</div>
+	<div>
+		<h2>Table Details</h2>
+		<div id="table-details">
+			<!-- Table details will be dynamically inserted here -->
+			<p>Select a table to see details.</p>
+		</div>
+	</div>
+
+
+</body>
+
+</html>

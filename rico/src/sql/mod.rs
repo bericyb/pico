@@ -17,7 +17,7 @@ pub mod sql {
 
     use crate::http::http::ResponseCode;
 
-    pub const SQL_FUNCTION_TEMPLATE: &[u8] = b"CREATE OR REPLACE FUNCTION {}(example_parameter int)\nRETURNS TABLE(example_result text) AS $$\n\t<YOUR SQL HERE>;\n$$ LANGUAGE sql;";
+    pub const SQL_FUNCTION_TEMPLATE: &str = "CREATE OR REPLACE FUNCTION {name}(example_parameter int)\nRETURNS TABLE(example_result text) AS $$\n\t<SQL STATEMENTS>;\n$$ LANGUAGE sql;";
 
     pub struct SQL {
         pub connection: Client,
