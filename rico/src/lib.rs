@@ -357,6 +357,16 @@ impl PicoService {
         // TODO: POLICY
         // TODO: VIEW
 
+        if request.headers.get("accept").is_some() {
+            let accept_headers = request.headers.get("accept").unwrap_or(&vec![]);
+            if accept_headers.get(0).unwrap_or(&"".to_string()) == (&"text/html".to_string()) {
+                if let Some(view) = &route_handler.view {
+                    let html = view.to_html(&json_body);
+                    return self.create_html_response(html);
+                }
+            }
+        }
+
         let mut headers: HashMap<String, Vec<String>> = HashMap::new();
         let binding = json_body.to_string();
         let body_bytes = binding.as_bytes();

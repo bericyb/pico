@@ -4,8 +4,11 @@ return {
     [''] = {
       GET = {
         VIEW = {
-          LINKS = {
-            'login',
+          {
+            TYPE = 'LINKS',
+            FIELDS = {
+              'login',
+            },
           },
         },
       },
@@ -13,12 +16,14 @@ return {
     ['login'] = {
       GET = {
         VIEW = {
-          POSTFORM = {
+          {
+            TYPE = 'POSTFORM',
             TITLE = 'Login',
+            TARGET = '/login',
             FIELDS = {
-              { name = 'username', type = 'text', label = 'Username' },
-              { name = 'password', type = 'password', label = 'Password' },
-              { name = 'button', type = 'submit', value = 'Login', label = 'Login' },
+              { id = 'username', type = 'text', label = 'Username' },
+              { id = 'password', type = 'password', label = 'Password' },
+              { id = 'button', type = 'submit', value = 'Login', label = 'Login' },
             },
           },
         },
@@ -48,7 +53,7 @@ return {
       GET = {
         SQL = 'getWorkouts.sql',
       },
-    }
+    },
     ['logout'] = {
       POST = {
         SQL = 'logout.sql',
