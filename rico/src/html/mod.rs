@@ -11,6 +11,7 @@ pub mod html {
 
     #[derive(Deserialize, Debug, PartialEq)]
     pub enum Entity {
+        Data,
         Links(Vec<String>),
         Form(Form),
         Markdown(String),
@@ -74,6 +75,7 @@ pub mod html {
                     }
                     Entity::Markdown(_) => todo!(),
                     Entity::Table(html_table) => todo!(),
+                    Entity::Data => todo!(),
                 }
             }
             return html;

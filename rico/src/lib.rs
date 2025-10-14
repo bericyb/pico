@@ -355,21 +355,23 @@ impl PicoService {
         // TODO: TRANSFORM
         // TODO: SETJWT
         // TODO: POLICY
-        // TODO: VIEW
 
-        if request.headers.get("accept").is_some() {
-            let accept_headers = request.headers.get("accept").unwrap_or(&vec![]);
+        let mut binding = json_body.to_string();
+        let mut body_bytes = binding.as_bytes();
+
+        // TODO: VIEW
+        if let Some(accept_headers) = request.headers.get("accept") {
+            // If accept headers is text/html and we have a View method on the route
+            // render html and return it as the body
             if accept_headers.get(0).unwrap_or(&"".to_string()) == (&"text/html".to_string()) {
                 if let Some(view) = &route_handler.view {
-                    let html = view.to_html(&json_body);
-                    return self.create_html_response(html);
+                    binding = view.to_html();
+                    body_bytes = binding.as_bytes();
                 }
             }
         }
 
         let mut headers: HashMap<String, Vec<String>> = HashMap::new();
-        let binding = json_body.to_string();
-        let body_bytes = binding.as_bytes();
         headers.insert(
             "Content-Length".to_string(),
             vec![format!("{}", body_bytes.len())],
