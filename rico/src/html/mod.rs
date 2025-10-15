@@ -11,10 +11,10 @@ pub mod html {
 
     #[derive(Deserialize, Debug, PartialEq)]
     pub enum Entity {
-        Data,
-        Links(Vec<String>),
+        Links(Vec<Field>),
         Form(Form),
-        Markdown(String),
+        Markdown,
+        Object(serde_json::Value),
         Table(HtmlTable),
     }
 
@@ -46,13 +46,19 @@ pub mod html {
     }
 
     impl View {
-        pub fn to_html(&self) -> String {
+        pub fn to_html(&self, data: serde_json::Value) -> String {
             let mut html = String::new();
             for entity in &self.entities {
                 match &entity {
-                    Entity::Links(items) => {
-                        for item in items {
-                            html = html + &format!("<a href=\"/{}", item).to_string();
+                    Entity::Links(fields) => {
+                        for field in fields {
+                            html = html
+                                + &format!(
+                                    "<a href=\"/{}\">{}</a>",
+                                    field.id.clone(),
+                                    field.label.clone().unwrap_or("".to_string()),
+                                )
+                                .to_string();
                         }
                     }
                     Entity::Form(form) => {
@@ -73,13 +79,40 @@ pub mod html {
                         }
                         html = html + &"</form>\n".to_string();
                     }
-                    Entity::Markdown(_) => todo!(),
-                    Entity::Table(html_table) => todo!(),
-                    Entity::Data => todo!(),
+                    Entity::Markdown => match &data {
+                        serde_json::Value::String(s) => {
+                            html = html + "<md>" + s + "</md>\n";
+                        }
+                        _ => {
+                            html = html + &render_object(&data);
+                        }
+                    },
+                    Entity::Table(objs) => todo!(),
+                    Entity::Object(obj) => html = html + &render_object(obj),
                 }
             }
             return html;
         }
+    }
+
+    fn render_object(obj: &serde_json::Value) -> String {
+        let mut html = String::new();
+        if let Some(map) = obj.as_object() {
+            html = html + "{";
+            for (key, value) in map {
+                html = html + &format!("\"{}\": {}", key, render_object(value));
+            }
+            html = html + "}";
+        } else if let Some(array) = obj.as_array() {
+            html = html + "[";
+            for item in array {
+                html = html + &render_object(item);
+            }
+            html = html + "]";
+        } else {
+            html = html + &format!("{}", obj);
+        }
+        return html;
     }
 
     impl FromLua for View {
@@ -132,8 +165,8 @@ pub mod html {
                                         });
                                     }
                                 };
-                                for link_res in link_fields.sequence_values::<String>() {
-                                    let link = match link_res {
+                                for link_res in link_fields.sequence_values::<Field>() {
+                                    let link: Field = match link_res {
                                         Ok(l) => l,
                                         Err(e) => {
                                             return Err(mlua::Error::FromLuaConversionError {

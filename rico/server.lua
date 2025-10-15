@@ -7,7 +7,8 @@ return {
           {
             TYPE = 'LINKS',
             FIELDS = {
-              'login',
+              { id = 'login', type = 'link', label = 'Login' },
+              { id = 'register', type = 'link', label = 'Register' },
             },
           },
         },
@@ -44,6 +45,29 @@ return {
       },
       GET = {
         SQL = 'pong.sql',
+      },
+    },
+    ['post'] = {
+      POST = {
+        SQL = 'createPost.sql',
+      },
+      GET = {
+        VIEW = {
+          {
+            TYPE = 'MARKDOWN',
+          },
+          {
+            TYPE = 'POSTFORM',
+            TITLE = 'Create Post',
+            TARGET = '/post',
+            FIELDS = {
+              { id = 'title', type = 'text', label = 'Title' },
+              { id = 'content', type = 'textarea', label = 'Content' },
+              { id = 'button', type = 'submit', value = 'Create Post', label = 'Create Post' },
+            },
+          },
+        },
+        SQL = 'getPosts.sql',
       },
     },
     ['workout'] = {

@@ -117,15 +117,21 @@ pub mod http {
         let version = parts.next().ok_or(ResponseCode::BadRequest)?.to_string();
 
         // Parse headers
-        let mut headers = HashMap::new();
+
+        let mut headers: HashMap<String, Vec<String>> = HashMap::new();
+
         for line in lines {
             if let Some((name, value)) = line.split_once(':') {
                 let name = name.trim().to_lowercase();
-                let value = value.trim().to_string();
-                headers.entry(name).or_insert_with(Vec::new).push(value);
+                let values = value.trim().split(',');
+                for value_str in values.map(str::trim) {
+                    headers
+                        .entry(name.clone())
+                        .or_insert_with(Vec::new)
+                        .push(value_str.to_string());
+                }
             }
         }
-
         // Build a minimal "request_headers" struct to satisfy parse_to_pico_request
         let simple_req = HttpRequest {
             method,
