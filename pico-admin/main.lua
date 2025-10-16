@@ -79,6 +79,7 @@ if flag == 'init' then
 
   local f = assert(io.open(name .. 'config.lua', 'w'))
   f:write(Example)
+  f:close()
 
   print 'Would you like to generate any migrations (m), functions (f), both (a) or not (n)?'
   local input = io.read '*l'
@@ -91,11 +92,14 @@ if flag == 'init' then
     os.execute(editor .. ' ' .. name .. 'migrations/' .. time .. ':init.sql')
   end
   if input == 'f' or input == 'a' then
-    local chunk = dofile(name .. 'config.lua')
-    for _, route in ipairs(chunk.ROUTES) do
-      for _, method in ipairs(route) do
-        if method.SQL then
-          local function_name = method.SQL
+    local chunk = assert(dofile(name .. 'config.lua'))
+    for route, method in pairs(chunk.ROUTES) do
+      print('generating function for route ' .. route)
+      for _method, handler in pairs(method) do
+        if handler.SQL then
+          local function_name = handler.SQL
+          function_name = string.sub(function_name, 1, string.find(function_name, '[.]') - 1)
+          print(function_name)
           f = assert(io.open(name .. 'functions/' .. function_name .. '.sql', 'w'))
 
           f:write('CREATE OR REPLACE FUNCTION ' .. function_name .. '()\nRETURNS TABLE(example_result TEXT) AS $$\n\tSELECT * FROM table;\n$$ LANGUAGE sql;')
