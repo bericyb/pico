@@ -65,3 +65,6 @@ node_modules/
 
 # Rust analyzer
 .rust-analyzer/
+
+# Packages
+*.min.js

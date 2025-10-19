@@ -7,7 +7,7 @@ pub mod sql {
     };
 
     use chrono::{DateTime, NaiveDate, NaiveDateTime};
-    use postgres::{Client, NoTls, Row};
+    use postgres::{Client, NoTls, Row, types::ToSql};
     use serde_json::{Value, json};
     use sqlparser::{
         ast::{CreateFunction, Statement},
@@ -42,16 +42,63 @@ pub mod sql {
                     None => return Err(ResponseCode::BadRequest),
                 }
             }
+            // 1. Convert Vec<Value> to Vec<Box<dyn ToSql + Sync>> via explicit matching
+            let boxed_params: Vec<Box<dyn ToSql + Sync>> = ingestion_params.clone()
+            .into_iter() // Consume the Vec to take ownership of each Value
+            .map(|v| {
+                match v {
+                    // Handle String values (maps to TEXT/VARCHAR)
+                    Value::String(s) => {
+                        Box::new(s) as Box<dyn ToSql + Sync>
+                    }
+                    // Handle Number values (maps to INTEGER, BIGINT, NUMERIC)
+                    Value::Number(n) => {
+                        if let Some(i) = n.as_i64() {
+                            // Treat as an integer
+                            Box::new(i) as Box<dyn ToSql + Sync>
+                        } else if let Some(f) = n.as_f64() {
+                            // Treat as a floating point number
+                            Box::new(f) as Box<dyn ToSql + Sync>
+                        } else {
+                            // Catch numbers that are too large for i64/f64 (should be rare)
+                            panic!("JSON number too large or complex for simple SQL type.")
+                        }
+                    }
+                    // Handle Boolean values (maps to BOOLEAN/BOOL)
+                    Value::Bool(b) => {
+                        Box::new(b) as Box<dyn ToSql + Sync>
+                    }
+                    // Handle Null values (maps to SQL NULL)
+                    Value::Null => {
+                        // Option<T> is how you send NULL, using a placeholder type like &str
+                        Box::new(None::<&str>) as Box<dyn ToSql + Sync>
+                    }
+                    // Handle Array and Object (maps to JSONB or fails for simple types)
+                    // If the column expects TEXT/INT/BOOL, these are invalid
+                    _ => {
+                        // If you hit this, the parameter is likely invalid for a simple column
+                        panic!("Unsupported JSON type {:?} for simple database column. Arrays/Objects must be handled as JSONB.", v)
+                    }
+                }
+            })
+            .collect();
+
+            // 2. Map to references for the final slice
+            let param_refs: Vec<&(dyn ToSql + Sync)> =
+                boxed_params.iter().map(|b| b.as_ref()).collect();
+
+            // 3. Get the final slice
+            let params_slice: &[&(dyn ToSql + Sync)] = param_refs.as_slice();
 
             // fn_call_statement looks like the following when we execute it here.
             // SELECT function_name($1, $2);
             println!("Executing SQL: {}", &self.fn_call_statement);
-            let res = match client.query(&self.fn_call_statement, &[]) {
+            let res = match client.query(&self.fn_call_statement, &params_slice) {
                 Ok(r) => r,
                 Err(e) => {
                     println!(
                         "error executing sql function with: {} : Input: {:#?} : Error: {}",
-                        &self.fn_call_statement, ingestion_params, e
+                        &self.fn_call_statement, &ingestion_params, e
                     );
                     return Err(ResponseCode::InternalError);
                 }

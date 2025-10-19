@@ -6,9 +6,9 @@ return {
         VIEW = {
           {
             TYPE = 'LINKS',
-            FIELDS = {
-              { id = 'login', type = 'link', label = 'Login' },
-              { id = 'register', type = 'link', label = 'Register' },
+            LINKS = {
+              { value = 'login', label = 'Login' },
+              { value = 'register', label = 'Register' },
             },
           },
         },
@@ -24,17 +24,35 @@ return {
             FIELDS = {
               { id = 'username', type = 'text', label = 'Username' },
               { id = 'password', type = 'password', label = 'Password' },
-              { id = 'button', type = 'submit', value = 'Login', label = 'Login' },
+              { id = 'button', type = 'submit', value = 'Login' },
             },
           },
         },
       },
       POST = {
+        VIEW = {
+          {
+            TYPE = 'MARKDOWN',
+          },
+          {
+            TYPE = 'LINKS',
+            LINKS = {
+              { value = '', label = 'Home' },
+            },
+          },
+        },
         SQL = 'login.sql',
+        POSTPROCESS = function(obj)
+          print('Login POSTPROCESS:', obj)
+          if obj and obj.id then
+            return 'Login successful'
+          else
+            return 'Invalid username or password'
+          end
+        end,
         SETJWT = function(obj, jwt)
           return {
             userId = obj.id,
-            teamId = obj.teamId,
           }
         end,
       },
@@ -89,74 +107,29 @@ return {
     ['user/:id/profile'] = {
       GET = {
         SQL = 'getUser.sql',
-        POLICY = function(obj, jwt)
-          if obj.id == jwt.userId then
-            return true
-          else
-            return false
-          end
-        end,
       },
       PUT = {
         SQL = 'updateUser.sql',
-        POLICY = function(obj, jwt)
-          if obj.id == jwt.userId then
-            return true
-          else
-            return false
-          end
-        end,
       },
       POST = {
         SQL = 'createUser.sql',
       },
       DELETE = {
         SQL = 'deleteUser.sql',
-        POLICY = function(obj, jwt)
-          if obj.id == jwt.userId then
-            return true
-          else
-            return false
-          end
-        end,
       },
     },
     ['team'] = {
       GET = {
         SQL = 'getTeam.sql',
-        POLICY = function(obj, jwt)
-          if obj.id == jwt.teamId then
-            return true
-          else
-            return false
-          end
-        end,
       },
       PUT = {
         SQL = 'updateTeam.sql',
-        POLICY = function(obj, jwt)
-          if obj.id == jwt.teamId then
-            return true
-          else
-            return false
-          end
-        end,
       },
       POST = {
         SQL = 'createTeam.sql',
-        POLICY = function()
-          return true
-        end,
       },
       DELETE = {
         SQL = 'deleteTeam.sql',
-        POLICY = function(obj, jwt)
-          if obj.id == jwt.teamId then
-            return true
-          else
-            return false
-          end
-        end,
       },
     },
   },

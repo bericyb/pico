@@ -3,19 +3,19 @@ use rico::{create_pico_function, create_pico_migration, create_pico_service};
 fn main() -> std::io::Result<()> {
     match std::env::args().nth(1) {
         Some(arg) => match arg.as_str() {
-            "--version" | "-v" => {
+            "version" | "-v" | "v" => {
                 println!("Pico version {}", env!("CARGO_PKG_VERSION"));
                 return Ok(());
             }
-            "migrate" | "m" => {
-                create_pico_migration();
+            "init" | "initialize" | "i" => {}
+            "migrate" | "m" => {}
+            "function" | "f" => {}
+            "help" | "--help" | "h" | "-h" | _ => {
+                println!(
+                    "Pico\n\tversion,  v: Current Pico Version\n\tinit,     i: Create a new Pico application\n\tmigrate,  m: Create a database migration\n\tfunction, f: Create a SQL function"
+                );
                 return Ok(());
             }
-            "function" | "f" => {
-                create_pico_function();
-                return Ok(());
-            }
-            _ => {}
         },
         None => {}
     }

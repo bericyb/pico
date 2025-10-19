@@ -11,7 +11,7 @@ use std::{
 };
 
 use chrono::Utc;
-use mlua::{Lua, Table};
+use mlua::{Lua, LuaSerdeExt, Table};
 use serde_json::Value;
 
 use crate::{
@@ -290,7 +290,7 @@ impl PicoService {
             }
         };
 
-        let json_body = match &route_handler.function_name {
+        let mut json_body = match &route_handler.function_name {
             Some(file_name) => {
                 let function_name = file_name.strip_suffix(".sql").unwrap_or(file_name);
                 let function = match self.sql.functions.get(function_name) {
@@ -320,7 +320,7 @@ impl PicoService {
                             function_input.insert(param, val.clone());
                         }
                     }
-                    Body::QueryParams(hash_map) => {
+                    Body::Form(hash_map) => {
                         for param in function.parameters.clone() {
                             let val = match hash_map.get(&param.clone()) {
                                 Some(qp) => qp,
@@ -340,6 +340,7 @@ impl PicoService {
                         todo!();
                     }
                 }
+                // TODO: PREPROCESS
 
                 match function.execute(&mut self.sql.connection, function_input) {
                     Ok(value) => value,
@@ -352,24 +353,54 @@ impl PicoService {
             }
         };
 
-        // TODO: TRANSFORM
+        // POSTPROCESS
+        // Overwrite json_body with transformed value
+        if let Some(post_process_fn) = &route_handler.post_process {
+            println!("Transforming response {} using lua function", json_body);
+
+            let lua_body: mlua::Value = match json_body.is_null() {
+                true => mlua::Value::Table(self.lua.create_table().unwrap()),
+                false => self.lua.to_value(&json_body).unwrap(),
+            };
+            let transformed: mlua::Value = match post_process_fn.call(lua_body.clone()) {
+                Ok(t) => t,
+                Err(e) => {
+                    println!("error transforming response body: {}", e);
+                    lua_body.clone()
+                }
+            };
+
+            json_body = match self.lua.from_value(transformed) {
+                Ok(jb) => jb,
+                Err(e) => {
+                    println!("error transforming response body back to json: {}", e);
+                    json_body
+                }
+            };
+        }
+
         // TODO: SETJWT
-        // TODO: POLICY
 
         let mut headers: HashMap<String, Vec<String>> = HashMap::new();
         let mut binding = json_body.to_string();
         let mut body_bytes = binding.as_bytes();
 
-        // TODO: VIEW
+        // VIEW
         if let Some(accept_headers) = request.headers.get("accept") {
             println!("accept headers: {:#?}", accept_headers.get(0));
             // If accept headers is text/html and we have a View method on the route
             // render html and return it as the body
-            if accept_headers.get(0).unwrap_or(&"".to_string()) == (&"text/html".to_string()) {
+            if accept_headers.get(0).unwrap_or(&"".to_string()) == (&"text/html".to_string())
+                || request.headers.get("hx-request").unwrap_or(&vec![]).get(0)
+                    == Some(&"true".to_string())
+            {
+                println!("Accept header is text/html or hx-request is true");
                 if let Some(view) = &route_handler.view {
+                    println!("Rendering html view for route");
                     binding = view.to_html(json_body);
                     body_bytes = binding.as_bytes();
                     headers.insert("Content-Type".to_string(), vec!["text/html".to_string()]);
+                    // headers.insert("HX-Refresh".to_string(), vec!["true".to_string()]);
                 } else {
                     headers.insert(
                         "Content-Type".to_string(),
@@ -492,11 +523,20 @@ pub fn validate_pico_config(
                 }
             };
 
-            let transform: Option<mlua::Function> = match handler.get("TRANSFORM") {
+            let pre_process: Option<mlua::Function> = match handler.get("PREPROCESS") {
                 Ok(v) => v,
                 Err(e) => {
                     return Err(format!(
-                        "invalid pico config: Route {}: {} has TRANSFORM but is not a function {}",
+                        "invalid pico config: Route {}: {} has PREPROCESS but is not a function {}",
+                        path, method, e
+                    ));
+                }
+            };
+            let post_process: Option<mlua::Function> = match handler.get("POSTPROCESS") {
+                Ok(v) => v,
+                Err(e) => {
+                    return Err(format!(
+                        "invalid pico config: Route {}: {} has POSTPROCESS but is not a function {}",
                         path, method, e
                     ));
                 }
@@ -508,7 +548,8 @@ pub fn validate_pico_config(
                     view,
                     function_name: sql,
                     set_jwt,
-                    transform,
+                    pre_process,
+                    post_process,
                 },
             );
         }

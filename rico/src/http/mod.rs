@@ -2,16 +2,17 @@ pub mod http {
     use regex::Regex;
     use serde_json::Value;
     use std::{collections::HashMap, io::Read, net::TcpStream, time::Duration, vec};
-    use url::Url;
 
     use crate::{PicoRequest, route::route::Method};
 
     pub const STREAM_BUFFER_SIZE: usize = 8192;
 
     const MAX_HEADER_SIZE: usize = 1024;
+
+    #[derive(Debug)]
     pub enum Body {
         Json(Value),
-        QueryParams(HashMap<String, String>),
+        Form(HashMap<String, String>),
         Raw(Vec<u8>),
     }
 
@@ -168,22 +169,26 @@ pub mod http {
 
         println!("Read body byte buffer len {}", read_len);
 
-        let mut remaining_body: Vec<u8> = vec![0u8; content_length];
+        if read_len > content_length {
+            let mut remaining_body: Vec<u8> = vec![0u8; content_length];
 
-        // TODO: add error handling here
-        stream
-            .set_read_timeout(Some(Duration::new(5, 0)))
-            .unwrap_or_default();
+            println!("Remaining body length to read: {}", content_length);
 
-        match stream.read_exact(&mut remaining_body) {
-            Ok(()) => {
-                body_bytes.extend_from_slice(&remaining_body);
-            }
-            Err(e) => {
-                println!("error reading exact body from TcpStream: {}", e);
-                return Err(ResponseCode::BadRequest);
-            }
-        };
+            // TODO: add error handling here
+            stream
+                .set_read_timeout(Some(Duration::new(5, 0)))
+                .unwrap_or_default();
+
+            match stream.read(&mut remaining_body) {
+                Ok(rb) => {
+                    body_bytes.extend_from_slice(&remaining_body[..rb]);
+                }
+                Err(e) => {
+                    println!("error reading exact body from TcpStream: {}", e);
+                    return Err(ResponseCode::BadRequest);
+                }
+            };
+        }
 
         let content_type: String = match header_map.get("content-type").and_then(|vals| vals.get(0))
         {
@@ -200,15 +205,12 @@ pub mod http {
                 body = Body::Json(json);
             }
             "application/x-www-form-urlencoded" => {
-                let path_str = &http_request.path;
-                let url = Url::parse(&format!("http://localhost:3000{}", String::from(path_str)))
-                    .unwrap();
-                body = Body::QueryParams(
-                    url.query_pairs()
-                        .into_iter()
-                        .map(|pair| (pair.0.to_string(), pair.1.to_string()))
-                        .collect(),
-                );
+                let param_map = url::form_urlencoded::parse(&body_bytes)
+                    .into_iter()
+                    .map(|(k, v)| (k.to_string(), v.to_string()))
+                    .collect::<HashMap<String, String>>();
+                body = Body::Form(param_map);
+                println!("parsed form body: {:?}", body);
             }
 
             // TODO: Find multipart parsing lib since I don't want to do that. XD

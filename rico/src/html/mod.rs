@@ -11,11 +11,17 @@ pub mod html {
 
     #[derive(Deserialize, Debug, PartialEq)]
     pub enum Entity {
-        Links(Vec<Field>),
+        Links(Vec<Link>),
         Form(Form),
         Markdown,
         Object(serde_json::Value),
         Table(HtmlTable),
+    }
+
+    #[derive(Deserialize, Debug, PartialEq)]
+    pub struct Link {
+        value: String,
+        label: Option<String>,
     }
 
     #[derive(Deserialize, Debug, PartialEq)]
@@ -47,43 +53,53 @@ pub mod html {
 
     impl View {
         pub fn to_html(&self, data: serde_json::Value) -> String {
-            let mut html = String::new();
+            let mut html = "<!DOCTYPE html><html lang=\"en\"> <head> <meta charset=\"UTF-8\"> <meta name=\"viewport\" content=\"width=device-width, initial-scale=1.0\"> <script src=\"https://cdn.jsdelivr.net/npm/htmx.org@2.0.7/dist/htmx.min.js\" integrity=\"sha384-ZBXiYtYQ6hJ2Y0ZNoYuI+Nq5MqWBr+chMrS/RkXpNzQCApHEhOt2aY8EJgqwHLkJ\" crossorigin=\"anonymous\"></script><title>Pico Admin</title></head><body>".to_string();
             for entity in &self.entities {
                 match &entity {
-                    Entity::Links(fields) => {
-                        for field in fields {
+                    Entity::Links(links) => {
+                        for link in links {
                             html = html
                                 + &format!(
                                     "<a href=\"/{}\">{}</a>",
-                                    field.id.clone(),
-                                    field.label.clone().unwrap_or("".to_string()),
+                                    link.value.clone(),
+                                    link.label.clone().unwrap_or("".to_string()),
                                 )
                                 .to_string();
                         }
                     }
                     Entity::Form(form) => {
-                        html = html + &format!("<form hx-{}=\"{}>\n", form.method, form.target);
+                        html = html
+                            + &format!(
+                                "<form hx-{}=\"{}\" style=\"display: flex; flex-direction: column; max-width: 10.5em;\">\n",
+                                form.method.to_string().to_lowercase(),
+                                form.target
+                            );
                         if let Some(title) = &form.title {
                             html = html + &format!("<legend>{}</legend>\n", title);
                         }
                         for field in &form.fields {
                             if let Some(label) = &field.label {
                                 html = html
-                                    + &format!("<label for=\"{}\">{}</label>", field.id, label);
+                                    + &format!("<label for=\"{}\">{}</label>\n", field.id, label);
                             }
                             html = html
                                 + &format!(
-                                    "<input type=\"{}\" id=\"{}\" name=\"{}\"",
-                                    field.field_type, field.id, field.id
+                                    "<input type=\"{}\" id=\"{}\" name=\"{}\" value=\"{}\">\n",
+                                    field.field_type,
+                                    field.id,
+                                    field.id,
+                                    field.value.clone().unwrap_or("".to_string())
                                 );
                         }
                         html = html + &"</form>\n".to_string();
                     }
                     Entity::Markdown => match &data {
                         serde_json::Value::String(s) => {
+                            println!("Rendering String markdown data: {:?}", data);
                             html = html + "<md>" + s + "</md>\n";
                         }
                         _ => {
+                            println!("Rendering object as markdown data: {:?}", data);
                             html = html + &render_object(&data);
                         }
                     },
@@ -91,6 +107,8 @@ pub mod html {
                     Entity::Object(obj) => html = html + &render_object(obj),
                 }
             }
+            html = html + "</body></html>";
+            println!("Generated HTML: {}", html);
             return html;
         }
     }
@@ -152,7 +170,7 @@ pub mod html {
                         match entity_type.to_uppercase().as_str() {
                             "LINKS" => {
                                 let mut links = vec![];
-                                let link_fields: Table = match table.get("FIELDS") {
+                                let link_entries: Table = match table.get("LINKS") {
                                     Ok(f) => f,
                                     Err(e) => {
                                         return Err(mlua::Error::FromLuaConversionError {
@@ -165,8 +183,8 @@ pub mod html {
                                         });
                                     }
                                 };
-                                for link_res in link_fields.sequence_values::<Field>() {
-                                    let link: Field = match link_res {
+                                for link_res in link_entries.sequence_values::<Link>() {
+                                    let link: Link = match link_res {
                                         Ok(l) => l,
                                         Err(e) => {
                                             return Err(mlua::Error::FromLuaConversionError {
@@ -251,7 +269,9 @@ pub mod html {
 
                                 view.entities.push(Entity::Form(form));
                             }
-                            "MARKDOWN" => {}
+                            "MARKDOWN" => {
+                                view.entities.push(Entity::Markdown);
+                            }
                             "TABLE" => {}
                             other => {
                                 return Err(mlua::Error::FromLuaConversionError {
@@ -291,6 +311,22 @@ pub mod html {
                 return Err(mlua::Error::FromLuaConversionError {
                     from: value.type_name(),
                     to: "Field".to_string(),
+                    message: Some("expected table".to_string()),
+                });
+            }
+        }
+    }
+
+    impl FromLua for Link {
+        fn from_lua(value: Value, _lua: &Lua) -> mlua::Result<Self> {
+            if let Value::Table(t) = value {
+                let value: String = t.get("value")?;
+                let label: Option<String> = t.get("label")?;
+                return Ok(Link { value, label });
+            } else {
+                return Err(mlua::Error::FromLuaConversionError {
+                    from: value.type_name(),
+                    to: "Link".to_string(),
                     message: Some("expected table".to_string()),
                 });
             }

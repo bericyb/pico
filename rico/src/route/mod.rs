@@ -16,7 +16,8 @@ pub mod route {
         pub view: Option<View>,
         pub function_name: Option<String>, // Name of sql function to execute on request
         pub set_jwt: Option<Function>,     // A lua function that sets the JWT for a user
-        pub transform: Option<Function>,   // A lua function that transforms the data for a request
+        pub pre_process: Option<Function>, // A lua function that transforms the data for a request
+        pub post_process: Option<Function>, // A lua function that transforms the data from a request
     }
 
     #[derive(Eq, Deserialize, Debug, Hash, PartialEq)]
