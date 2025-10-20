@@ -1,27 +1,33 @@
-use rico::{create_pico_function, create_pico_migration, create_pico_service};
+use mlua::LuaSerdeExt;
+use rico::{create_pico_function, create_pico_service};
+
+const ADMIN_SCRIPT: &str = include_str!("../admin.lua");
 
 fn main() -> std::io::Result<()> {
     match std::env::args().nth(1) {
-        Some(arg) => match arg.as_str() {
-            "version" | "-v" | "v" => {
-                println!("Pico version {}", env!("CARGO_PKG_VERSION"));
-                return Ok(());
+        Some(_) => {
+            let args: Vec<String> = std::env::args().skip(1).collect();
+            let lua = mlua::Lua::new();
+            let lua_args = match lua.to_value(&args) {
+                Ok(la) => la,
+                Err(e) => panic!("failed to read args, {}", e),
+            };
+
+            match lua.globals().set("arg", lua_args) {
+                Ok(_) => {}
+                Err(e) => panic!("failed to load args, {}", e),
             }
-            "init" | "initialize" | "i" => {}
-            "migrate" | "m" => {}
-            "function" | "f" => {}
-            "help" | "--help" | "h" | "-h" | _ => {
-                println!(
-                    "Pico\n\tversion,  v: Current Pico Version\n\tinit,     i: Create a new Pico application\n\tmigrate,  m: Create a database migration\n\tfunction, f: Create a SQL function"
-                );
-                return Ok(());
+
+            match lua.load(ADMIN_SCRIPT).exec() {
+                Ok(_) => return Ok(()),
+                Err(e) => panic!("{}", e),
             }
-        },
+        }
         None => {}
     }
     println!("Starting pico application...");
 
-    let mut pico = match create_pico_service(Some("server.lua".to_string()), None) {
+    let mut pico = match create_pico_service(Some("config.lua".to_string()), None) {
         Ok(service) => service,
         Err(e) => {
             panic!("{}", e);

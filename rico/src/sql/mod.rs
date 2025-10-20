@@ -148,11 +148,11 @@ pub mod sql {
     fn load_functions(
         client: &mut Client,
     ) -> Result<HashMap<String, Function>, Box<dyn std::error::Error>> {
-        let dir_entries = match fs::read_dir("db/functions/") {
+        let dir_entries = match fs::read_dir("functions/") {
             Ok(e) => e,
             Err(e) => {
                 return Err(format!(
-                    "failed to read db/functions/ directory for stored sql scripts: {}",
+                    "failed to read functions/ directory for stored sql scripts: {}",
                     e
                 )
                 .into());
@@ -283,7 +283,7 @@ pub mod sql {
             Err(e) => return Err(format!("db error while applying migrations: {}", e).into()),
         };
         // TODO: allow for custom migrations directory in pico config
-        let dir_entries = match fs::read_dir("db/migrations/") {
+        let dir_entries = match fs::read_dir("migrations/") {
             Ok(des) => des,
             Err(e) => {
                 return Err(format!(

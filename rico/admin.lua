@@ -1,4 +1,4 @@
-Example = [[return {
+local Example = [[return {
   DB = 'postgresql://postgres:password@0.0.0.0:5432/pico',
   ROUTES = {
     [''] = {
@@ -66,7 +66,6 @@ Example = [[return {
 }]]
 
 local flag = arg[1]
-
 if flag == 'init' then
   local name = ''
   if arg[2] then
@@ -108,7 +107,88 @@ if flag == 'init' then
       end
     end
   end
-elseif flag == 'migrate' then
-elseif flag == 'function' then
+elseif flag == 'migrate' or flag == 'm' then
+  io.write 'Migration name: '
+  local input = io.read '*l'
+
+  if input == nil then
+    print 'Error: Could not read migration name.'
+    return
+  end
+
+  input = string.gsub(input, ' ', '_')
+  input = string.gsub(input, '^%s*(.-)%s*$', '%1')
+
+  if input == '' then
+    print 'Migration name required'
+    return
+  end
+
+  local now = os.time()
+
+  local file_name = string.format('migrations/%d:%s.sql', now, input)
+
+  local file, err = io.open(file_name, 'w')
+
+  if file then
+    file:close()
+    print(string.format('Migration file %s created.', file_name))
+  else
+    print(string.format('migration creation failed: %s', err))
+  end
+elseif flag == 'function' or flag == 'f' then
+  local SQL_FUNCTION_TEMPLATE = [[
+  CREATE OR REPLACE FUNCTION %s(example_parameter int)
+  RETURNS TABLE(example_result text) AS $$
+	  <SQL STATEMENTS>;
+  $$ LANGUAGE sql;
+  ]]
+  io.write 'SQL function name: '
+  local input = io.read '*l'
+
+  if input == nil then
+    print 'Error reading input.'
+    return
+  end
+
+  input = string.gsub(input, ' ', '_')
+  input = string.gsub(input, '^%s*(.-)%s*$', '%1')
+
+  if input == '' then
+    print 'Function name required'
+    return
+  end
+
+  local file_path = string.format('functions/%s.sql', input)
+
+  local exists_check = io.open(file_path, 'r')
+  if exists_check then
+    exists_check:close()
+    print(string.format("function creation failed: File '%s' already exists.", file_path))
+    return
+  end
+
+  local file, err = io.open(file_path, 'w')
+
+  if not file then
+    print(string.format('function creation failed: %s', err))
+    return
+  end
+
+  local content = string.gsub(SQL_FUNCTION_TEMPLATE, '{name}', input)
+
+  local success, write_err = file:write(content)
+
+  if not success then
+    print(string.format('function creation failed: Failed to write content: %s', write_err))
+    file:close()
+    return
+  end
+
+  -- Close the file handle
+  file:close()
+
+  print(string.format('Function file %s created.', input))
 elseif flag == 'generate' or flag == 'ai' then
+elseif flag == 'delete' or flag == 'd' then
 end

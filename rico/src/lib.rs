@@ -66,7 +66,7 @@ pub fn create_pico_service(
     config_path: Option<String>,
     _env_file_path: Option<String>,
 ) -> Result<PicoService, String> {
-    let pico_config_path = config_path.unwrap_or("pico.lua".to_string());
+    let pico_config_path = config_path.unwrap_or("config.lua".to_string());
     let mut pico_config_file = match File::open(pico_config_path.clone()) {
         Ok(file) => file,
         Err(e) => {
@@ -139,7 +139,7 @@ pub fn create_pico_migration() {
 
     let now = Utc::now().timestamp();
 
-    let file_name = format!("db/migrations/{}:{}.sql", now, input);
+    let file_name = format!("migrations/{}:{}.sql", now, input);
 
     let _file = match File::create(&file_name) {
         Ok(f) => f,
@@ -168,7 +168,7 @@ pub fn create_pico_function() {
         return;
     }
 
-    let file_path = format!("db/functions/{}.sql", input);
+    let file_path = format!("functions/{}.sql", input);
 
     let mut file = match File::create_new(file_path) {
         Ok(f) => f,
