@@ -11,6 +11,7 @@ use std::{
 };
 
 use chrono::Utc;
+use jsonwebtoken::{Header, encode};
 use mlua::{Lua, LuaSerdeExt, Table};
 use serde_json::Value;
 
@@ -23,6 +24,7 @@ use crate::{
 };
 
 pub struct PicoService {
+    secret_key: String,
     lua: Lua,
     sql: SQL,
     db: String,
@@ -112,7 +114,10 @@ pub fn create_pico_service(
         Err(e) => return Err(format!("error initializing sql database: {}", e)),
     };
 
+    let secret_key = std::env::var("PICO_SECRET_KEY").unwrap_or("default_secret".to_string());
+
     return Ok(PicoService {
+        secret_key,
         lua,
         sql,
         db,
@@ -380,8 +385,37 @@ impl PicoService {
         }
 
         // TODO: SETJWT
-
         let mut headers: HashMap<String, Vec<String>> = HashMap::new();
+        if let Some(set_jwt_fn) = &route_handler.set_jwt {
+            println!("Setting JWT using lua function");
+
+            let lua_body: mlua::Value = match json_body.is_null() {
+                true => mlua::Value::Table(self.lua.create_table().unwrap()),
+                false => self.lua.to_value(&json_body).unwrap(),
+            };
+            match set_jwt_fn.call::<mlua::Value, ()>(lua_body.clone()) {
+                Ok(claims) => {
+                    println!("Setting JWT: {:#?}", claims);
+                    let jwt = match encode(&Header::default(), claims, self.secret_key.as_ref()) {
+                        Ok(jwt) => jwt,
+                        Err(e) => {
+                            println!("error encoding JWT: {}", e);
+                            "".to_string()
+                        }
+                    };
+                    if jwt != "" {
+                        headers.insert(
+                            "Set-Cookie".to_string(),
+                            vec![format!("pico_jwt={}; HttpOnly; Path=/;", jwt)],
+                        );
+                    }
+                }
+                Err(e) => {
+                    println!("error setting JWT: {}", e);
+                }
+            };
+        }
+
         let mut binding = json_body.to_string();
         let mut body_bytes = binding.as_bytes();
 
