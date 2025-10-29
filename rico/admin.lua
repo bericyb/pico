@@ -161,6 +161,7 @@ if flag == 'init' then
   os.execute('mkdir ' .. name)
   os.execute('mkdir ' .. name .. 'migrations/')
   os.execute('mkdir ' .. name .. 'functions/')
+  os.execute('mkdir ' .. name .. 'public/')
   os.execute('touch ' .. name .. 'config.lua')
 
   local f = assert(io.open(name .. 'config.lua', 'w'))
