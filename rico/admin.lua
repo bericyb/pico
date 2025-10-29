@@ -22,8 +22,8 @@ local Example = [[return {
             TITLE = 'Login',
             TARGET = '/login',
             FIELDS = {
-              { id = 'email', type = 'email', label = 'Email' },
-              { id = 'password', type = 'password', label = 'Password' },
+              { id = 'user_email', type = 'email', label = 'Email' },
+              { id = 'user_password', type = 'password', label = 'Password' },
               { id = 'button', type = 'submit', value = 'Login' },
             },
           },
@@ -76,8 +76,8 @@ local Example = [[return {
             TITLE = 'Register',
             TARGET = '/register',
             FIELDS = {
-              { id = 'email', type = 'email', label = 'Email' },
-              { id = 'password', type = 'password', label = 'Password' },
+              { id = 'user_email', type = 'email', label = 'Email' },
+              { id = 'user_password', type = 'password', label = 'Password' },
               { id = 'button', type = 'submit', value = 'Register' },
             },
           },
@@ -216,7 +216,7 @@ CREATE TABLE IF NOT EXISTS ping_counter (
 
     -- Create authentication functions
     local auth_user_content = [[CREATE OR REPLACE FUNCTION authenticate_user(user_email text, user_password text)
-RETURNS TABLE(id int, email text) AS $$
+RETURNS TABLE(id int, email VARCHAR) AS $$
 BEGIN
     RETURN QUERY
     SELECT users.id, users.email
@@ -227,7 +227,7 @@ END;
 $$ LANGUAGE plpgsql;]]
 
     local register_user_content = [[CREATE OR REPLACE FUNCTION register_user(user_email text, user_password text)
-RETURNS TABLE(id int, email text) AS $$
+RETURNS TABLE(id int, email VARCHAR) AS $$
 BEGIN
     -- Check if user already exists
     IF EXISTS (SELECT 1 FROM users WHERE users.email = user_email) THEN

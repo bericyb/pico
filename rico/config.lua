@@ -22,8 +22,8 @@ return {
             TITLE = 'Login',
             TARGET = '/login',
             FIELDS = {
-              { id = 'email', type = 'email', label = 'Email' },
-              { id = 'password', type = 'password', label = 'Password' },
+              { id = 'user_email', type = 'email', label = 'Email' },
+              { id = 'user_password', type = 'password', label = 'Password' },
               { id = 'button', type = 'submit', value = 'Login' },
             },
           },
@@ -76,8 +76,8 @@ return {
             TITLE = 'Register',
             TARGET = '/register',
             FIELDS = {
-              { id = 'email', type = 'email', label = 'Email' },
-              { id = 'password', type = 'password', label = 'Password' },
+              { id = 'user_email', type = 'email', label = 'Email' },
+              { id = 'user_password', type = 'password', label = 'Password' },
               { id = 'button', type = 'submit', value = 'Register' },
             },
           },

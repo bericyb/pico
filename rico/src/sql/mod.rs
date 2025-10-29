@@ -208,8 +208,19 @@ pub mod sql {
                     }
                 };
 
+                // Use the file name as function name (already extracted above)
+                let function_name = &file_name;
+                
+                // Drop the function if it exists (ignore errors if it doesn't exist)
+                let drop_sql = format!("DROP FUNCTION IF EXISTS {} CASCADE", function_name);
+                match client.execute(&drop_sql, &[]) {
+                    Ok(_) => println!("Dropped existing function: {}", function_name),
+                    Err(e) => println!("Note: Could not drop function {} (may not exist): {}", function_name, e),
+                }
+
+                // Create the new function
                 match client.execute(&function.to_string(), &[]) {
-                    Ok(_) => {}
+                    Ok(_) => println!("Created function: {}", function_name),
                     Err(e) => {
                         return Err(format!(
                             "failed to create sql function {:#?}: error {}",
