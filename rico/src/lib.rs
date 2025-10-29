@@ -8,6 +8,7 @@ use std::{
     fs::File,
     io::{self, Read, Write},
     net::TcpListener,
+    path::Path,
 };
 
 use log::{debug, error, info, warn};
@@ -74,6 +75,88 @@ fn call_lua_function_with_optional_jwt(
             }
         }
     }
+}
+
+/// Returns the MIME type for a file based on its extension
+fn get_mime_type(file_path: &str) -> &'static str {
+    match Path::new(file_path).extension().and_then(|s| s.to_str()) {
+        Some("html") => "text/html",
+        Some("css") => "text/css",
+        Some("js") => "application/javascript",
+        Some("png") => "image/png",
+        Some("jpg" | "jpeg") => "image/jpeg",
+        Some("gif") => "image/gif",
+        Some("svg") => "image/svg+xml",
+        Some("json") => "application/json",
+        Some("txt") => "text/plain",
+        Some("ico") => "image/x-icon",
+        Some("woff") => "font/woff",
+        Some("woff2") => "font/woff2",
+        Some("ttf") => "font/ttf",
+        Some("otf") => "font/otf",
+        _ => "application/octet-stream",
+    }
+}
+
+/// Attempts to serve a static file from the public directory
+fn try_serve_static_file(request_path: &str) -> Result<Vec<u8>, ResponseCode> {
+    // Security: prevent path traversal attacks
+    if request_path.contains("..") {
+        debug!("Rejecting request with path traversal attempt: {}", request_path);
+        return Err(ResponseCode::NotFound);
+    }
+
+    // Construct the file path
+    let mut file_path = String::from("public");
+    if !request_path.starts_with('/') {
+        file_path.push('/');
+    }
+    file_path.push_str(request_path);
+
+    // Default to index.html for directory requests
+    if request_path.ends_with('/') {
+        file_path.push_str("index.html");
+    }
+
+    debug!("Attempting to serve static file: {}", file_path);
+
+    // Try to read the file
+    let file_contents = match std::fs::read(&file_path) {
+        Ok(contents) => contents,
+        Err(e) => {
+            debug!("Failed to read static file {}: {}", file_path, e);
+            return Err(ResponseCode::NotFound);
+        }
+    };
+
+    // Determine MIME type
+    let mime_type = get_mime_type(&file_path);
+    
+    // Build HTTP response
+    let mut headers = HashMap::new();
+    headers.insert("Content-Type".to_string(), vec![mime_type.to_string()]);
+    headers.insert("Content-Length".to_string(), vec![file_contents.len().to_string()]);
+
+    let mut response = String::from("HTTP/1.1 200 OK\r\n");
+    for (key, values) in headers {
+        response.push_str(&key);
+        response.push_str(": ");
+        for (i, value) in values.iter().enumerate() {
+            if i > 0 {
+                response.push_str("; ");
+            }
+            response.push_str(value);
+        }
+        response.push_str("\r\n");
+    }
+    response.push_str("\r\n");
+
+    // Combine response headers with file contents
+    let mut response_bytes = response.into_bytes();
+    response_bytes.extend(file_contents);
+
+    debug!("Successfully served static file: {} ({} bytes)", file_path, response_bytes.len());
+    Ok(response_bytes)
 }
 
 pub struct PicoService {
@@ -315,8 +398,8 @@ impl PicoService {
                         tree = &subtree;
                     }
                     None => {
-                        debug!("No route match found for segment, even with wildcard");
-                        return Err(ResponseCode::NotFound);
+                        debug!("No route match found for segment, trying static file fallback");
+                        return try_serve_static_file(&request.path);
                     }
                 },
             }
@@ -761,4 +844,53 @@ pub fn validate_pico_config(
     //
 
     return Ok((db, routes, route_tree, None));
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_get_mime_type() {
+        assert_eq!(get_mime_type("test.html"), "text/html");
+        assert_eq!(get_mime_type("styles.css"), "text/css");
+        assert_eq!(get_mime_type("script.js"), "application/javascript");
+        assert_eq!(get_mime_type("image.png"), "image/png");
+        assert_eq!(get_mime_type("image.jpg"), "image/jpeg");
+        assert_eq!(get_mime_type("unknown.xyz"), "application/octet-stream");
+    }
+
+    #[test]
+    fn test_static_file_path_traversal_protection() {
+        let result = try_serve_static_file("../etc/passwd");
+        assert!(result.is_err());
+        
+        let result2 = try_serve_static_file("/test/../../../etc/passwd");
+        assert!(result2.is_err());
+    }
+
+    #[test]
+    fn test_static_file_nonexistent() {
+        let result = try_serve_static_file("/nonexistent.html");
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn test_static_file_serving_success() {
+        // This should succeed since we have public/test.html
+        let result = try_serve_static_file("/test.html");
+        assert!(result.is_ok());
+        
+        if let Ok(response_bytes) = result {
+            let response_str = String::from_utf8_lossy(&response_bytes);
+            
+            // Should contain HTTP headers
+            assert!(response_str.contains("HTTP/1.1 200 OK"));
+            assert!(response_str.contains("Content-Type: text/html"));
+            assert!(response_str.contains("Content-Length:"));
+            
+            // Should contain the actual HTML content
+            assert!(response_str.contains("Static File Test"));
+        }
+    }
 }

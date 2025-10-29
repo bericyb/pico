@@ -18,9 +18,11 @@ If you reach a point where Pico isn't right for you, it's easy to leave. Pico is
 
 To create a new Pico application run:
 ```shell
-pico init <application_name> # New directory with a Pico app
+pico_server init <application_name> # New directory with a Pico app
 # --- or ---
-pico init                    # Initialize current directory as a Pico app
+pico_server init                    # Initialize current directory as a Pico app
+
+pico_server                 # Start the Pico server
 
 ```
 
@@ -183,6 +185,70 @@ $$ LANGUAGE sql;
 ```
 
 A request to `GET /users/123` will automatically pass `user_id = 123` to the SQL function.
+
+## Static File Serving
+
+Pico automatically serves static files from a `public/` directory when no matching route is found. This allows you to serve CSS, JavaScript, images, and other static assets alongside your dynamic routes.
+
+### How It Works
+
+1. When a request comes in, Pico first attempts to match it against your defined routes
+2. If no route matches, Pico looks for a static file in the `public/` directory
+3. If a static file is found, it's served with the appropriate MIME type
+4. If no static file exists, a 404 error is returned
+
+### Example Structure
+
+```
+Application
+├── config.lua
+├── functions/
+│   └── pong.sql
+├── migrations/
+│   └── 1760832777:init.sql
+└── public/
+    ├── index.html       # Served at /
+    ├── styles.css       # Served at /styles.css
+    ├── app.js          # Served at /app.js
+    └── images/
+        └── logo.png     # Served at /images/logo.png
+```
+
+### Security Features
+
+- **Path traversal protection**: Requests containing `../` are automatically blocked
+- **Directory indexing**: Requests to directories automatically serve `index.html` if it exists
+- **Safe file serving**: Only files within the `public/` directory can be served
+
+### Example Usage
+
+Create a simple HTML page:
+```html
+<!-- public/index.html -->
+<!DOCTYPE html>
+<html>
+<head>
+    <title>My Pico App</title>
+    <link rel="stylesheet" href="/styles.css">
+</head>
+<body>
+    <h1>Welcome to Pico!</h1>
+    <script src="/app.js"></script>
+</body>
+</html>
+```
+
+With corresponding CSS:
+```css
+/* public/styles.css */
+body {
+    font-family: Arial, sans-serif;
+    margin: 0;
+    padding: 20px;
+}
+```
+
+These files will be automatically served when you visit `/` and `/styles.css` respectively.
 
 ## Advanced Configuration
 
