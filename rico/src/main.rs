@@ -1,5 +1,5 @@
 use mlua::LuaSerdeExt;
-use rico::{create_pico_function, create_pico_service};
+use rico::create_pico_service;
 
 const ADMIN_SCRIPT: &str = include_str!("../admin.lua");
 

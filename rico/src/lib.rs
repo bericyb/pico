@@ -11,7 +11,7 @@ use std::{
 };
 
 use chrono::Utc;
-use jsonwebtoken::{Header, encode};
+use jsonwebtoken::{Algorithm, DecodingKey, EncodingKey, Header, Validation, decode, encode};
 use mlua::{Lua, LuaSerdeExt, Table};
 use serde_json::Value;
 
@@ -22,6 +22,58 @@ use crate::{
     route::route::{Method, Route, RouteHandler},
     sql::sql::{SQL, SQL_FUNCTION_TEMPLATE, initialize_sql_service},
 };
+
+/// Extracts JWT claims from pico_jwt cookie in request headers
+fn extract_jwt_claims(headers: &HashMap<String, Vec<String>>, secret_key: &str) -> Option<Value> {
+    let cookie_headers = headers.get("cookie")?;
+
+    for cookie_header in cookie_headers {
+        for cookie in cookie_header.split(';') {
+            let cookie = cookie.trim();
+            if cookie.starts_with("pico_jwt=") {
+                let jwt_token = &cookie[9..]; // Remove "pico_jwt=" prefix
+
+                // Create validation - use default HS256 algorithm
+                let validation = Validation::new(Algorithm::HS256);
+
+                match decode::<Value>(
+                    jwt_token,
+                    &DecodingKey::from_secret(secret_key.as_ref()),
+                    &validation,
+                ) {
+                    Ok(token_data) => return Some(token_data.claims),
+                    Err(_) => continue, // Invalid JWT, try next cookie
+                }
+            }
+        }
+    }
+    None
+}
+
+/// Helper function to call a Lua function with flexible arity (1 or 2 parameters)
+fn call_lua_function_with_optional_jwt(
+    function: &mlua::Function,
+    data: mlua::Value,
+    jwt: mlua::Value,
+) -> mlua::Result<mlua::Value> {
+    // First try calling with 2 parameters (data, jwt)
+    match function.call((data.clone(), jwt)) {
+        Ok(result) => Ok(result),
+        Err(e) => {
+            // If it fails, check if it's an arity error and try with 1 parameter
+            let error_msg = e.to_string();
+            if error_msg.contains("wrong number of arguments")
+                || error_msg.contains("attempt to call")
+            {
+                // Try calling with just the data parameter for backward compatibility
+                function.call(data)
+            } else {
+                // Other error, propagate it
+                Err(e)
+            }
+        }
+    }
+}
 
 pub struct PicoService {
     secret_key: String,
@@ -295,8 +347,13 @@ impl PicoService {
             }
         };
 
-        let mut json_body = match &route_handler.function_name {
+        println!("route_handler: {:#?}", route_handler);
+        let mut json_body = match &route_handler.sql_function_name {
             Some(file_name) => {
+                println!(
+                    "Executing sql function {} for route {}",
+                    file_name, pico_route_path
+                );
                 let function_name = file_name.strip_suffix(".sql").unwrap_or(file_name);
                 let function = match self.sql.functions.get(function_name) {
                     Some(s) => s,
@@ -345,11 +402,66 @@ impl PicoService {
                         todo!();
                     }
                 }
-                // TODO: PREPROCESS
+                println!("Function input: {:#?}", function_input);
+
+                // PREPROCESS
+                // Apply preprocessing if defined
+                if let Some(pre_process_fn) = &route_handler.pre_process {
+                    println!("Preprocessing request using lua function");
+
+                    // Extract JWT claims from cookies
+                    let jwt_claims = extract_jwt_claims(&request.headers, &self.secret_key);
+
+                    // Create function input as JSON
+                    let function_input_json =
+                        serde_json::to_value(&function_input).unwrap_or(Value::Null);
+                    let lua_input: mlua::Value = self.lua.to_value(&function_input_json).unwrap();
+
+                    let lua_jwt: mlua::Value = match jwt_claims {
+                        Some(claims) => self.lua.to_value(&claims).unwrap(),
+                        None => mlua::Value::Nil,
+                    };
+
+                    let preprocessed: mlua::Value = match call_lua_function_with_optional_jwt(
+                        pre_process_fn,
+                        lua_input.clone(),
+                        lua_jwt,
+                    ) {
+                        Ok(p) => p,
+                        Err(e) => {
+                            println!("error preprocessing request: {}", e);
+                            lua_input.clone()
+                        }
+                    };
+
+                    // Convert back to function input
+                    let preprocessed_json: Value = match self.lua.from_value(preprocessed) {
+                        Ok(pj) => pj,
+                        Err(e) => {
+                            println!("error converting preprocessed result back to json: {}", e);
+                            function_input_json
+                        }
+                    };
+
+                    // Update function_input with preprocessed values
+                    if let Value::Object(obj) = preprocessed_json {
+                        for (key, value) in obj {
+                            function_input.insert(key, value);
+                        }
+                    }
+                }
 
                 match function.execute(&mut self.sql.connection, function_input) {
                     Ok(value) => value,
-                    Err(rc) => return Err(rc),
+                    Err(rc) => {
+                        println!(
+                            "error executing sql function {} for route {}: {:?}",
+                            function_name,
+                            pico_route_path,
+                            rc.to_str()
+                        );
+                        return Err(rc);
+                    }
                 }
             }
             None => {
@@ -360,14 +472,28 @@ impl PicoService {
 
         // POSTPROCESS
         // Overwrite json_body with transformed value
+        println!("Initial response body: {}", json_body);
         if let Some(post_process_fn) = &route_handler.post_process {
             println!("Transforming response {} using lua function", json_body);
+
+            // Extract JWT claims from cookies
+            let jwt_claims = extract_jwt_claims(&request.headers, &self.secret_key);
 
             let lua_body: mlua::Value = match json_body.is_null() {
                 true => mlua::Value::Table(self.lua.create_table().unwrap()),
                 false => self.lua.to_value(&json_body).unwrap(),
             };
-            let transformed: mlua::Value = match post_process_fn.call(lua_body.clone()) {
+
+            let lua_jwt: mlua::Value = match jwt_claims {
+                Some(claims) => self.lua.to_value(&claims).unwrap(),
+                None => mlua::Value::Nil,
+            };
+
+            let transformed: mlua::Value = match call_lua_function_with_optional_jwt(
+                post_process_fn,
+                lua_body.clone(),
+                lua_jwt,
+            ) {
                 Ok(t) => t,
                 Err(e) => {
                     println!("error transforming response body: {}", e);
@@ -393,10 +519,22 @@ impl PicoService {
                 true => mlua::Value::Table(self.lua.create_table().unwrap()),
                 false => self.lua.to_value(&json_body).unwrap(),
             };
-            match set_jwt_fn.call::<mlua::Value, ()>(lua_body.clone()) {
+            match set_jwt_fn.call(lua_body.clone()) {
                 Ok(claims) => {
                     println!("Setting JWT: {:#?}", claims);
-                    let jwt = match encode(&Header::default(), claims, self.secret_key.as_ref()) {
+                    // Convert Lua value to JSON for JWT encoding
+                    let jwt_claims: Value = match self.lua.from_value(claims) {
+                        Ok(jc) => jc,
+                        Err(e) => {
+                            println!("error converting lua claims to json: {}", e);
+                            return Err(ResponseCode::InternalError);
+                        }
+                    };
+                    let jwt = match encode(
+                        &Header::default(),
+                        &jwt_claims,
+                        &EncodingKey::from_secret(self.secret_key.as_ref()),
+                    ) {
                         Ok(jwt) => jwt,
                         Err(e) => {
                             println!("error encoding JWT: {}", e);
@@ -580,7 +718,7 @@ pub fn validate_pico_config(
                 method,
                 RouteHandler {
                     view,
-                    function_name: sql,
+                    sql_function_name: sql,
                     set_jwt,
                     pre_process,
                     post_process,

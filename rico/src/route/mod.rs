@@ -14,8 +14,8 @@ pub mod route {
     #[derive(Debug, PartialEq)]
     pub struct RouteHandler {
         pub view: Option<View>,
-        pub function_name: Option<String>, // Name of sql function to execute on request
-        pub set_jwt: Option<Function>,     // A lua function that sets the JWT for a user
+        pub sql_function_name: Option<String>, // Name of sql function to execute on request
+        pub set_jwt: Option<Function>,         // A lua function that sets the JWT for a user
         pub pre_process: Option<Function>, // A lua function that transforms the data for a request
         pub post_process: Option<Function>, // A lua function that transforms the data from a request
     }
