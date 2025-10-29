@@ -1,0 +1,18 @@
+<table>
+    <thead>
+        <tr>
+            {{#each columns}}
+            <th>{{name}}</th>
+            {{/each}}
+        </tr>
+    </thead>
+    <tbody>
+        {{#each rows}}
+        <tr>
+            {{#each ../columns}}
+            <td>{{lookup ../this (if accessor accessor name)}}</td>
+            {{/each}}
+        </tr>
+        {{/each}}
+    </tbody>
+</table>

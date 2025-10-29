@@ -1,5 +1,8 @@
+use log::info;
+
 fn main() -> std::io::Result<()> {
-    println!("Pico admin starting...");
+    env_logger::init();
+    info!("Pico admin starting...");
 
     let temp = "test string".to_string();
     let mut map: std::collections::HashMap<String, String> = std::collections::HashMap::new();
@@ -7,8 +10,8 @@ fn main() -> std::io::Result<()> {
     map.insert("".to_string(), temp);
 
     match map.get("") {
-        Some(r) => println!("result of empty string! {}", r),
-        None => println!("expected temp, got nothing..."),
+        Some(r) => info!("result of empty string! {}", r),
+        None => info!("expected temp, got nothing..."),
     }
 
     Ok(())

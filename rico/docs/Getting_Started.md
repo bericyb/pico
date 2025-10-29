@@ -88,6 +88,104 @@ ROUTES = {
 | VIEW        | A table of entities used to render an HTML response. Used to build a rudimentary frontend. More on views [here](VIEWS.md)                                                                                                                 |
 
 
+## Request Formation and Parameter Mapping
+
+**Critical Requirement**: For SQL functions to work properly, you **MUST** match parameter names in the request body to the parameter names in the SQL function.
+
+### How Pico Processes Requests
+
+Pico "squashes" all request data into a single body structure, regardless of whether the original request contains:
+- JSON body data
+- Query parameters (`?name=value&email=test@example.com`)
+- Form data
+- URL path parameters (`:id` in routes)
+
+All of this data becomes available as key-value pairs that are mapped to your SQL function parameters.
+
+### Parameter Mapping Rules
+
+1. **Exact Name Matching**: The key names in your request body must exactly match the parameter names in your SQL function
+2. **Case Sensitive**: Parameter names are case-sensitive
+3. **Priority Order**: 
+   - First, Pico looks in the request body (JSON or form data)
+   - Then, it falls back to route parameters (like `:id` from URL paths)
+   - If a required parameter is missing, the request fails with a BadRequest error
+
+### Examples
+
+#### SQL Function Definition
+```sql
+-- functions/create_user.sql
+CREATE OR REPLACE FUNCTION create_user(username text, email text, age int)
+RETURNS TABLE(id int, created_at timestamp) AS $$
+    INSERT INTO users (username, email, age, created_at)
+    VALUES (create_user.username, create_user.email, create_user.age, NOW())
+    RETURNING id, created_at;
+$$ LANGUAGE sql;
+```
+
+#### Valid Request Bodies
+
+**JSON Request:**
+```json
+{
+  "username": "john_doe",
+  "email": "john@example.com", 
+  "age": 25
+}
+```
+
+**Form Data Request:**
+```
+POST /users
+Content-Type: application/x-www-form-urlencoded
+
+username=john_doe&email=john@example.com&age=25
+```
+
+**Query Parameters (GET request):**
+```
+GET /users?username=john_doe&email=john@example.com&age=25
+```
+
+#### Invalid Request Example
+```json
+{
+  "name": "john_doe",     // ❌ Wrong! Should be "username"
+  "userEmail": "john@example.com",  // ❌ Wrong! Should be "email"
+  "age": 25               // ✅ Correct
+}
+```
+
+### Route Parameters
+
+URL parameters are also mapped to SQL function parameters:
+
+```lua
+-- Route definition
+ROUTES = {
+    ['users/:user_id'] = {
+        GET = {
+            SQL = "get_user_by_id.sql"  -- Function expects parameter named "user_id"
+        }
+    }
+}
+```
+
+```sql
+-- functions/get_user_by_id.sql
+CREATE OR REPLACE FUNCTION get_user_by_id(user_id int)
+RETURNS TABLE(id int, username text, email text) AS $$
+    SELECT u.id, u.username, u.email 
+    FROM users u 
+    WHERE u.id = get_user_by_id.user_id;
+$$ LANGUAGE sql;
+```
+
+A request to `GET /users/123` will automatically pass `user_id = 123` to the SQL function.
+
+## Advanced Configuration
+
 Because everything is a Lua table, you can decompose your `config.lua` into different files for simplicity.
 For example:
 ```lua

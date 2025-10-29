@@ -1,8 +1,9 @@
 pub mod route {
     use std::{collections::HashMap, fmt, str::FromStr};
 
+    use log::warn;
     use mlua::{FromLua, Function, Lua, Value};
-    use serde::Deserialize;
+    use serde::{Deserialize, Serialize};
 
     use crate::html::html::View;
 
@@ -20,7 +21,7 @@ pub mod route {
         pub post_process: Option<Function>, // A lua function that transforms the data from a request
     }
 
-    #[derive(Eq, Deserialize, Debug, Hash, PartialEq)]
+    #[derive(Eq, Deserialize, Serialize, Debug, Hash, PartialEq)]
     pub enum Method {
         GET,
         POST,
@@ -56,7 +57,7 @@ pub mod route {
                 "ws_upgrade?" => Method::WS,
                 "sse" => Method::SSE,
                 _ => {
-                    println!("unknown method type {}", string);
+                    warn!("Unknown method type: {}", string);
                     return Err(());
                 }
             };

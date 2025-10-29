@@ -6,6 +6,7 @@ pub mod sql {
         io::Read,
     };
 
+    use log::{debug, error, info, warn};
     use chrono::{DateTime, NaiveDate, NaiveDateTime};
     use postgres::{Client, NoTls, Row, types::ToSql};
     use serde_json::{Value, json};
@@ -92,12 +93,12 @@ pub mod sql {
 
             // fn_call_statement looks like the following when we execute it here.
             // SELECT function_name($1, $2);
-            println!("Executing SQL: {}", &self.fn_call_statement);
+            debug!("Executing SQL: {}", &self.fn_call_statement);
             let res = match client.query(&self.fn_call_statement, &params_slice) {
                 Ok(r) => r,
                 Err(e) => {
-                    println!(
-                        "error executing sql function with: {} : Input: {:#?} : Error: {}",
+                    error!(
+                        "Error executing sql function with: {} : Input: {:#?} : Error: {}",
                         &self.fn_call_statement, &ingestion_params, e
                     );
                     return Err(ResponseCode::InternalError);
@@ -214,13 +215,13 @@ pub mod sql {
                 // Drop the function if it exists (ignore errors if it doesn't exist)
                 let drop_sql = format!("DROP FUNCTION IF EXISTS {} CASCADE", function_name);
                 match client.execute(&drop_sql, &[]) {
-                    Ok(_) => println!("Dropped existing function: {}", function_name),
-                    Err(e) => println!("Note: Could not drop function {} (may not exist): {}", function_name, e),
+                    Ok(_) => info!("Dropped existing function: {}", function_name),
+                    Err(e) => debug!("Note: Could not drop function {} (may not exist): {}", function_name, e),
                 }
 
                 // Create the new function
                 match client.execute(&function.to_string(), &[]) {
-                    Ok(_) => println!("Created function: {}", function_name),
+                    Ok(_) => info!("Created function: {}", function_name),
                     Err(e) => {
                         return Err(format!(
                             "failed to create sql function {:#?}: error {}",
@@ -240,8 +241,8 @@ pub mod sql {
                     .for_each(|arg| match &arg.name {
                         Some(a) => parameters.push(a.value.clone()),
                         None => {
-                            println!(
-                                "parameter for function {:#?} found with name?",
+                            warn!(
+                                "Parameter for function {:#?} found with no name",
                                 entry.file_name().to_str()
                             );
                         }
@@ -320,8 +321,8 @@ pub mod sql {
             };
 
             if entry.path().extension() != Some(std::ffi::OsStr::new("sql")) {
-                println!(
-                    "file {} is not a sql migration file. migration files follow the format <timestamp>:<migration_name>.sql",
+                warn!(
+                    "File {} is not a sql migration file. Migration files follow the format <timestamp>:<migration_name>.sql",
                     file_path
                 );
                 continue;
@@ -330,8 +331,8 @@ pub mod sql {
             let file_name: String = match entry.file_name().to_str() {
                 Some(s) => s.to_string(),
                 None => {
-                    println!(
-                        "file {} is not a properly named migration file. migration files follow the format <timestamp>:<migration_name>.sql",
+                    warn!(
+                        "File {} is not a properly named migration file. Migration files follow the format <timestamp>:<migration_name>.sql",
                         file_path
                     );
                     continue;
@@ -340,8 +341,8 @@ pub mod sql {
 
             let file_name_splits: Vec<&str> = file_name.split(':').into_iter().collect();
             if file_name_splits.len() != 2 {
-                println!(
-                    "file {} is not a properly named migration file. migration files follow the format <timestamp>:<migration_name>.sql",
+                warn!(
+                    "File {} is not a properly named migration file. Migration files follow the format <timestamp>:<migration_name>.sql",
                     file_path
                 );
                 continue;
@@ -350,17 +351,17 @@ pub mod sql {
                 Some(dt_str) => match dt_str.parse() {
                     Ok(dt) => dt,
                     Err(e) => {
-                        println!("{}", dt_str);
-                        println!(
-                            "file {} does not have a valid timestamp. migration files follow the format <timestamp>:<migration_name>.sql: {}",
+                        debug!("{}", dt_str);
+                        warn!(
+                            "File {} does not have a valid timestamp. Migration files follow the format <timestamp>:<migration_name>.sql: {}",
                             file_path, e
                         );
                         continue;
                     }
                 },
                 None => {
-                    println!(
-                        "file {} is not a properly named migration file. migration files follow the format <timestamp>:<migration_name>.sql",
+                    warn!(
+                        "File {} is not a properly named migration file. Migration files follow the format <timestamp>:<migration_name>.sql",
                         file_path
                     );
                     continue;
@@ -378,7 +379,7 @@ pub mod sql {
                 }
             }
         }
-        println!("Migrations applied!");
+        info!("Migrations applied!");
 
         Ok(())
     }
@@ -393,20 +394,20 @@ pub mod sql {
 
         f.read_to_string(&mut sql)?;
         if sql.trim().is_empty() {
-            println!("skipping empty migration {}", file_path);
+            debug!("Skipping empty migration {}", file_path);
             return Ok(());
         }
 
         match client.execute(&sql, &[]) {
             Ok(_) => {
-                println!("applied migration {}", file_path);
+                info!("Applied migration {}", file_path);
             }
             Err(e) => {
                 return Err(format!("failed to apply migration {}: {}", file_path, e).into());
             }
         }
 
-        println!("timestamp passed in {}", migration_time);
+        debug!("Migration timestamp: {}", migration_time);
         let migration_time: NaiveDateTime = DateTime::from_timestamp(migration_time, 0)
             .unwrap()
             .naive_utc();
@@ -431,70 +432,70 @@ pub mod sql {
                 "int2" => match row.try_get::<_, i16>(idx) {
                     Ok(v) => json!(v),
                     Err(e) => {
-                        println!("Error reading int2 column '{}': {:?}", column.name(), e);
+                        warn!("Error reading int2 column '{}': {:?}", column.name(), e);
                         Value::Null
                     }
                 },
                 "int4" => match row.try_get::<_, i32>(idx) {
                     Ok(v) => json!(v),
                     Err(e) => {
-                        println!("Error reading int4 column '{}': {:?}", column.name(), e);
+                        warn!("Error reading int4 column '{}': {:?}", column.name(), e);
                         Value::Null
                     }
                 },
                 "int8" => match row.try_get::<_, i64>(idx) {
                     Ok(v) => json!(v),
                     Err(e) => {
-                        println!("Error reading int8 column '{}': {:?}", column.name(), e);
+                        warn!("Error reading int8 column '{}': {:?}", column.name(), e);
                         Value::Null
                     }
                 },
                 "float4" => match row.try_get::<_, f32>(idx) {
                     Ok(v) => json!(v),
                     Err(e) => {
-                        println!("Error reading float4 column '{}': {:?}", column.name(), e);
+                        warn!("Error reading float4 column '{}': {:?}", column.name(), e);
                         Value::Null
                     }
                 },
                 "float8" => match row.try_get::<_, f64>(idx) {
                     Ok(v) => json!(v),
                     Err(e) => {
-                        println!("Error reading float8 column '{}': {:?}", column.name(), e);
+                        warn!("Error reading float8 column '{}': {:?}", column.name(), e);
                         Value::Null
                     }
                 },
                 "bool" => match row.try_get::<_, bool>(idx) {
                     Ok(v) => json!(v),
                     Err(e) => {
-                        println!("Error reading bool column '{}': {:?}", column.name(), e);
+                        warn!("Error reading bool column '{}': {:?}", column.name(), e);
                         Value::Null
                     }
                 },
                 "text" | "varchar" | "char" => match row.try_get::<_, String>(idx) {
                     Ok(v) => json!(v),
                     Err(e) => {
-                        println!("Error reading string column '{}': {:?}", column.name(), e);
+                        warn!("Error reading string column '{}': {:?}", column.name(), e);
                         Value::Null
                     }
                 },
                 "uuid" => match row.try_get::<_, String>(idx) {
                     Ok(v) => json!(v), // UUID as string; safer for postgres 0.19.11
                     Err(e) => {
-                        println!("Error reading uuid column '{}': {:?}", column.name(), e);
+                        warn!("Error reading uuid column '{}': {:?}", column.name(), e);
                         Value::Null
                     }
                 },
                 "date" => match row.try_get::<_, NaiveDate>(idx) {
                     Ok(v) => json!(v.to_string()),
                     Err(e) => {
-                        println!("Error reading date column '{}': {:?}", column.name(), e);
+                        warn!("Error reading date column '{}': {:?}", column.name(), e);
                         Value::Null
                     }
                 },
                 "timestamp" | "timestamptz" => match row.try_get::<_, NaiveDateTime>(idx) {
                     Ok(v) => json!(v.to_string()),
                     Err(e) => {
-                        println!(
+                        warn!(
                             "Error reading timestamp column '{}': {:?}",
                             column.name(),
                             e
@@ -503,7 +504,7 @@ pub mod sql {
                     }
                 },
                 other => {
-                    println!(
+                    warn!(
                         "Unsupported column type '{}' for column '{}'",
                         other,
                         column.name()

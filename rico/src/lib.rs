@@ -10,6 +10,7 @@ use std::{
     net::TcpListener,
 };
 
+use log::{debug, error, info, warn};
 use chrono::Utc;
 use jsonwebtoken::{Algorithm, DecodingKey, EncodingKey, Header, Validation, decode, encode};
 use mlua::{Lua, LuaSerdeExt, Table};
@@ -190,7 +191,7 @@ pub fn create_pico_migration() {
     let input = input.trim();
 
     if input == "" {
-        println!("Migration name required");
+        error!("Migration name required");
         return;
     }
 
@@ -201,12 +202,12 @@ pub fn create_pico_migration() {
     let _file = match File::create(&file_name) {
         Ok(f) => f,
         Err(e) => {
-            println!("migration creation failed {}", e);
+            error!("Migration creation failed: {}", e);
             return;
         }
     };
 
-    println!("Migration file {} created.", &file_name);
+    info!("Migration file {} created.", &file_name);
     return;
 }
 
@@ -221,7 +222,7 @@ pub fn create_pico_function() {
     let input = input.trim();
 
     if input == "" {
-        println!("Function name required");
+        error!("Function name required");
         return;
     }
 
@@ -230,7 +231,7 @@ pub fn create_pico_function() {
     let mut file = match File::create_new(file_path) {
         Ok(f) => f,
         Err(e) => {
-            println!("function creation failed: {}", e);
+            error!("Function creation failed: {}", e);
             return;
         }
     };
@@ -238,12 +239,12 @@ pub fn create_pico_function() {
     match file.write(SQL_FUNCTION_TEMPLATE.replace("{name}", input).as_bytes()) {
         Ok(_) => {}
         Err(e) => {
-            println!("function creation failed: {}", e);
+            error!("Function creation failed: {}", e);
             return;
         }
     }
 
-    println!("Function file {} created.", &input);
+    info!("Function file {} created.", &input);
     return;
 }
 
@@ -253,12 +254,12 @@ impl PicoService {
         // TODO: Get port from pico config
         let listener = TcpListener::bind("127.0.0.1:8080")?;
 
-        println!("Pico server listening on {}", listener.local_addr()?);
+        info!("Pico server listening on {}", listener.local_addr()?);
 
         for stream in listener.incoming() {
             let mut s = match stream {
                 Err(e) => {
-                    println!("error accepting incoming TcpStream: {}", e);
+                    error!("Error accepting incoming TcpStream: {}", e);
                     continue;
                 }
                 Ok(s) => s,
@@ -289,11 +290,7 @@ impl PicoService {
         &mut self,
         request: PicoRequest,
     ) -> Result<Vec<u8>, ResponseCode> {
-        println!(
-            "Received request: {} {}",
-            request.method,
-            request.path.as_str()
-        );
+        debug!("Received request: {} {}", request.method, request.path.as_str());
 
         let mut tree = &self.route_tree;
 
@@ -303,34 +300,34 @@ impl PicoService {
             if seg == "" {
                 continue;
             }
-            println!("working on seg: {}", seg);
+            debug!("Working on segment: {}", seg);
             match tree.nodes.get(&seg.to_string()) {
                 Some(subtree) => {
-                    println!("found match!");
+                    debug!("Found exact match for segment");
                     pico_route_path = pico_route_path + &subtree.parameter_name;
                     tree = &subtree;
                 }
                 None => match tree.nodes.get(&"*".to_string()) {
                     Some(subtree) => {
-                        println!("Wildcard match found");
+                        debug!("Wildcard match found for segment");
                         route_parameters.insert(subtree.parameter_name.clone(), seg.to_string());
                         pico_route_path = pico_route_path + &subtree.parameter_name;
                         tree = &subtree;
                     }
                     None => {
-                        println!("no route match found, even with wildcard");
+                        debug!("No route match found for segment, even with wildcard");
                         return Err(ResponseCode::NotFound);
                     }
                 },
             }
         }
 
-        println!("pico_route_path: {}", pico_route_path);
+        debug!("Resolved pico_route_path: {}", pico_route_path);
 
         let pico_route: &Route = match self.routes.get(&pico_route_path) {
             Some(r) => r,
             None => {
-                println!("no route handlers for {} found", pico_route_path);
+                debug!("No route handlers found for {}", pico_route_path);
                 return Err(ResponseCode::NotFound);
             }
         };
@@ -338,8 +335,8 @@ impl PicoService {
         let route_handler = match pico_route.definitions.get(&request.method) {
             Some(rh) => rh,
             None => {
-                println!(
-                    "no route handler for {} found with method {}",
+                debug!(
+                    "No route handler for {} found with method {}",
                     pico_route_path,
                     request.method.to_string()
                 );
@@ -347,10 +344,10 @@ impl PicoService {
             }
         };
 
-        println!("route_handler: {:#?}", route_handler);
+        debug!("Route handler: {:#?}", route_handler);
         let mut json_body = match &route_handler.sql_function_name {
             Some(file_name) => {
-                println!(
+                debug!(
                     "Executing sql function {} for route {}",
                     file_name, pico_route_path
                 );
@@ -358,8 +355,8 @@ impl PicoService {
                 let function = match self.sql.functions.get(function_name) {
                     Some(s) => s,
                     None => {
-                        println!(
-                            "internal error getting sql function {} for route {}",
+                        error!(
+                            "Internal error getting sql function {} for route {}",
                             function_name, pico_route_path,
                         );
                         return Err(ResponseCode::InternalError);
@@ -398,16 +395,16 @@ impl PicoService {
                         }
                     }
                     Body::Raw(_items) => {
-                        println!("Gotta figure out raw input into sql...");
+                        warn!("Raw input into SQL not yet implemented");
                         todo!();
                     }
                 }
-                println!("Function input: {:#?}", function_input);
+                debug!("Function input: {:#?}", function_input);
 
                 // PREPROCESS
                 // Apply preprocessing if defined
                 if let Some(pre_process_fn) = &route_handler.pre_process {
-                    println!("Preprocessing request using lua function");
+                    debug!("Preprocessing request using lua function");
 
                     // Extract JWT claims from cookies
                     let jwt_claims = extract_jwt_claims(&request.headers, &self.secret_key);
@@ -429,7 +426,7 @@ impl PicoService {
                     ) {
                         Ok(p) => p,
                         Err(e) => {
-                            println!("error preprocessing request: {}", e);
+                            warn!("Error preprocessing request: {}", e);
                             lua_input.clone()
                         }
                     };
@@ -438,7 +435,7 @@ impl PicoService {
                     let preprocessed_json: Value = match self.lua.from_value(preprocessed) {
                         Ok(pj) => pj,
                         Err(e) => {
-                            println!("error converting preprocessed result back to json: {}", e);
+                            warn!("Error converting preprocessed result back to json: {}", e);
                             function_input_json
                         }
                     };
@@ -454,8 +451,8 @@ impl PicoService {
                 match function.execute(&mut self.sql.connection, function_input) {
                     Ok(value) => value,
                     Err(rc) => {
-                        println!(
-                            "error executing sql function {} for route {}: {:?}",
+                        error!(
+                            "Error executing sql function {} for route {}: {:?}",
                             function_name,
                             pico_route_path,
                             rc.to_str()
@@ -465,16 +462,16 @@ impl PicoService {
                 }
             }
             None => {
-                println!("no sql function found for {}", pico_route_path);
+                debug!("No sql function found for {}", pico_route_path);
                 Value::Null
             }
         };
 
         // POSTPROCESS
         // Overwrite json_body with transformed value
-        println!("Initial response body: {}", json_body);
+        debug!("Initial response body: {}", json_body);
         if let Some(post_process_fn) = &route_handler.post_process {
-            println!("Transforming response {} using lua function", json_body);
+            debug!("Transforming response {} using lua function", json_body);
 
             // Extract JWT claims from cookies
             let jwt_claims = extract_jwt_claims(&request.headers, &self.secret_key);
@@ -496,7 +493,7 @@ impl PicoService {
             ) {
                 Ok(t) => t,
                 Err(e) => {
-                    println!("error transforming response body: {}", e);
+                    warn!("Error transforming response body: {}", e);
                     lua_body.clone()
                 }
             };
@@ -504,7 +501,7 @@ impl PicoService {
             json_body = match self.lua.from_value(transformed) {
                 Ok(jb) => jb,
                 Err(e) => {
-                    println!("error transforming response body back to json: {}", e);
+                    warn!("Error transforming response body back to json: {}", e);
                     json_body
                 }
             };
@@ -513,7 +510,7 @@ impl PicoService {
         // TODO: SETJWT
         let mut headers: HashMap<String, Vec<String>> = HashMap::new();
         if let Some(set_jwt_fn) = &route_handler.set_jwt {
-            println!("Setting JWT using lua function");
+            debug!("Setting JWT using lua function");
 
             let lua_body: mlua::Value = match json_body.is_null() {
                 true => mlua::Value::Table(self.lua.create_table().unwrap()),
@@ -521,12 +518,12 @@ impl PicoService {
             };
             match set_jwt_fn.call(lua_body.clone()) {
                 Ok(claims) => {
-                    println!("Setting JWT: {:#?}", claims);
+                    debug!("Setting JWT: {:#?}", claims);
                     // Convert Lua value to JSON for JWT encoding
                     let jwt_claims: Value = match self.lua.from_value(claims) {
                         Ok(jc) => jc,
                         Err(e) => {
-                            println!("error converting lua claims to json: {}", e);
+                            error!("Error converting lua claims to json: {}", e);
                             return Err(ResponseCode::InternalError);
                         }
                     };
@@ -537,7 +534,7 @@ impl PicoService {
                     ) {
                         Ok(jwt) => jwt,
                         Err(e) => {
-                            println!("error encoding JWT: {}", e);
+                            error!("Error encoding JWT: {}", e);
                             "".to_string()
                         }
                     };
@@ -549,7 +546,7 @@ impl PicoService {
                     }
                 }
                 Err(e) => {
-                    println!("error setting JWT: {}", e);
+                    error!("Error setting JWT: {}", e);
                 }
             };
         }
@@ -559,16 +556,16 @@ impl PicoService {
 
         // VIEW
         if let Some(accept_headers) = request.headers.get("accept") {
-            println!("accept headers: {:#?}", accept_headers.get(0));
+            debug!("Accept headers: {:#?}", accept_headers.get(0));
             // If accept headers is text/html and we have a View method on the route
             // render html and return it as the body
             if accept_headers.get(0).unwrap_or(&"".to_string()) == (&"text/html".to_string())
                 || request.headers.get("hx-request").unwrap_or(&vec![]).get(0)
                     == Some(&"true".to_string())
             {
-                println!("Accept header is text/html or hx-request is true");
+                debug!("Accept header is text/html or hx-request is true");
                 if let Some(view) = &route_handler.view {
-                    println!("Rendering html view for route");
+                    debug!("Rendering html view for route");
                     binding = view.to_html(json_body);
                     body_bytes = binding.as_bytes();
                     headers.insert("Content-Type".to_string(), vec!["text/html".to_string()]);
@@ -640,7 +637,7 @@ pub fn validate_pico_config(
         }
     };
 
-    println!("routes table: {:#?}", routes_table);
+    debug!("Routes table: {:#?}", routes_table);
 
     for route in routes_table.pairs::<String, Table>() {
         let (path, handlers) = match route {
@@ -735,7 +732,7 @@ pub fn validate_pico_config(
 
     // Create route tree
     for (route, _) in &routes {
-        println!("Creating route {}", route);
+        debug!("Creating route {}", route);
         for seg in route.split("/") {
             // TODO: is this correct and needs an underscore for lint?
             let mut _current = &mut route_tree;

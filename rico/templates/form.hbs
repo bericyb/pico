@@ -1,0 +1,11 @@
+<form hx-{{method_lower}}="{{target}}" style="display: flex; flex-direction: column; max-width: 10.5em;">
+    {{#if title}}
+    <legend>{{title}}</legend>
+    {{/if}}
+    {{#each fields}}
+    {{#if label}}
+    <label for="{{id}}">{{label}}</label>
+    {{/if}}
+    <input type="{{field_type}}" id="{{id}}" name="{{id}}" value="{{#if value}}{{value}}{{/if}}">
+    {{/each}}
+</form>

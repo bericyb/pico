@@ -1,15 +1,18 @@
 pub mod html {
+    use handlebars::Handlebars;
+    use log::debug;
     use mlua::{FromLua, Lua, Table, Value};
-    use serde::Deserialize;
+    use serde::{Deserialize, Serialize};
+    use serde_json::json;
 
     use crate::route::route::Method;
 
-    #[derive(Deserialize, Debug, PartialEq)]
+    #[derive(Deserialize, Serialize, Debug, PartialEq)]
     pub struct View {
         entities: Vec<Entity>,
     }
 
-    #[derive(Deserialize, Debug, PartialEq)]
+    #[derive(Deserialize, Serialize, Debug, PartialEq)]
     pub enum Entity {
         Links(Vec<Link>),
         Form(Form),
@@ -18,13 +21,13 @@ pub mod html {
         Table(HtmlTable),
     }
 
-    #[derive(Deserialize, Debug, PartialEq)]
+    #[derive(Deserialize, Serialize, Debug, PartialEq)]
     pub struct Link {
         value: String,
         label: Option<String>,
     }
 
-    #[derive(Deserialize, Debug, PartialEq)]
+    #[derive(Deserialize, Serialize, Debug, PartialEq)]
     pub struct Form {
         target: String,
         method: Method,
@@ -32,7 +35,7 @@ pub mod html {
         fields: Vec<Field>,
     }
 
-    #[derive(Deserialize, Debug, PartialEq)]
+    #[derive(Deserialize, Serialize, Debug, PartialEq)]
     pub struct Field {
         id: String,
         field_type: String,
@@ -40,12 +43,12 @@ pub mod html {
         value: Option<String>,
     }
 
-    #[derive(Deserialize, Debug, PartialEq)]
+    #[derive(Deserialize, Serialize, Debug, PartialEq)]
     pub struct HtmlTable {
         columns: Vec<Column>,
     }
 
-    #[derive(Deserialize, Debug, PartialEq)]
+    #[derive(Deserialize, Serialize, Debug, PartialEq)]
     pub struct Column {
         name: String,
         accessor: Option<String>,
@@ -53,84 +56,103 @@ pub mod html {
 
     impl View {
         pub fn to_html(&self, data: serde_json::Value) -> String {
-            let mut html = "<!DOCTYPE html><html lang=\"en\"> <head> <meta charset=\"UTF-8\"> <meta name=\"viewport\" content=\"width=device-width, initial-scale=1.0\"> <script src=\"https://cdn.jsdelivr.net/npm/htmx.org@2.0.7/dist/htmx.min.js\" integrity=\"sha384-ZBXiYtYQ6hJ2Y0ZNoYuI+Nq5MqWBr+chMrS/RkXpNzQCApHEhOt2aY8EJgqwHLkJ\" crossorigin=\"anonymous\"></script><title>Pico Admin</title></head><body>".to_string();
+            // Initialize Handlebars registry
+            let mut handlebars = Handlebars::new();
+
+            // Register templates - using include_str! to embed templates at compile time
+            handlebars
+                .register_template_string("layout", include_str!("../../templates/layout.hbs"))
+                .expect("Failed to register layout template");
+            handlebars
+                .register_template_string("links", include_str!("../../templates/links.hbs"))
+                .expect("Failed to register links template");
+            handlebars
+                .register_template_string("form", include_str!("../../templates/form.hbs"))
+                .expect("Failed to register form template");
+            handlebars
+                .register_template_string("markdown", include_str!("../../templates/markdown.hbs"))
+                .expect("Failed to register markdown template");
+            handlebars
+                .register_template_string("object", include_str!("../../templates/object.hbs"))
+                .expect("Failed to register object template");
+            handlebars
+                .register_template_string("table", include_str!("../../templates/table.hbs"))
+                .expect("Failed to register table template");
+
+            let mut content = String::new();
+
             for entity in &self.entities {
-                match &entity {
+                let entity_html = match entity {
                     Entity::Links(links) => {
-                        for link in links {
-                            html = html
-                                + &format!(
-                                    "<a href=\"/{}\">{}</a>",
-                                    link.value.clone(),
-                                    link.label.clone().unwrap_or("".to_string()),
-                                )
-                                .to_string();
-                        }
+                        let context = json!({ "links": links });
+                        handlebars
+                            .render("links", &context)
+                            .expect("Failed to render links template")
                     }
                     Entity::Form(form) => {
-                        html = html
-                            + &format!(
-                                "<form hx-{}=\"{}\" style=\"display: flex; flex-direction: column; max-width: 10.5em;\">\n",
-                                form.method.to_string().to_lowercase(),
-                                form.target
-                            );
-                        if let Some(title) = &form.title {
-                            html = html + &format!("<legend>{}</legend>\n", title);
-                        }
-                        for field in &form.fields {
-                            if let Some(label) = &field.label {
-                                html = html
-                                    + &format!("<label for=\"{}\">{}</label>\n", field.id, label);
-                            }
-                            html = html
-                                + &format!(
-                                    "<input type=\"{}\" id=\"{}\" name=\"{}\" value=\"{}\">\n",
-                                    field.field_type,
-                                    field.id,
-                                    field.id,
-                                    field.value.clone().unwrap_or("".to_string())
-                                );
-                        }
-                        html = html + &"</form>\n".to_string();
+                        let context = json!({
+                            "target": form.target,
+                            "method_lower": form.method.to_string().to_lowercase(),
+                            "title": form.title,
+                            "fields": form.fields
+                        });
+                        handlebars
+                            .render("form", &context)
+                            .expect("Failed to render form template")
                     }
-                    Entity::Markdown => match &data {
-                        serde_json::Value::String(s) => {
-                            println!("Rendering String markdown data: {:?}", data);
-                            html = html + "<md>" + s + "</md>\n";
-                        }
-                        _ => {
-                            println!("Rendering object as markdown data: {:?}", data);
-                            html = html + &render_object(&data);
-                        }
-                    },
-                    Entity::Table(objs) => todo!(),
-                    Entity::Object(obj) => html = html + &render_object(obj),
-                }
-            }
-            html = html + "</body></html>";
-            println!("Generated HTML: {}", html);
-            return html;
-        }
-    }
+                    Entity::Markdown => {
+                        let markdown_content = match &data {
+                            serde_json::Value::String(s) => {
+                                debug!("Rendering String markdown data: {:?}", data);
+                                s.clone()
+                            }
+                            _ => {
+                                debug!("Rendering object as markdown data: {:?}", data);
+                                serde_json::to_string_pretty(&data).unwrap_or_default()
+                            }
+                        };
+                        let context = json!({ "content": markdown_content });
+                        handlebars
+                            .render("markdown", &context)
+                            .expect("Failed to render markdown template")
+                    }
+                    Entity::Table(table) => {
+                        // Extract rows from data based on table structure
+                        let rows = if let serde_json::Value::Array(array) = &data {
+                            array.clone()
+                        } else {
+                            vec![data.clone()]
+                        };
 
-    fn render_object(obj: &serde_json::Value) -> String {
-        let mut html = String::new();
-        if let Some(map) = obj.as_object() {
-            html = html + "{";
-            for (key, value) in map {
-                html = html + &format!("\"{}\": {}", key, render_object(value));
+                        let context = json!({
+                            "columns": table.columns,
+                            "rows": rows
+                        });
+                        handlebars
+                            .render("table", &context)
+                            .expect("Failed to render table template")
+                    }
+                    Entity::Object(obj) => {
+                        let context = json!({
+                            "object_json": serde_json::to_string_pretty(obj).unwrap_or_default()
+                        });
+                        handlebars
+                            .render("object", &context)
+                            .expect("Failed to render object template")
+                    }
+                };
+                content.push_str(&entity_html);
             }
-            html = html + "}";
-        } else if let Some(array) = obj.as_array() {
-            html = html + "[";
-            for item in array {
-                html = html + &render_object(item);
-            }
-            html = html + "]";
-        } else {
-            html = html + &format!("{}", obj);
+
+            // Render the complete page with layout
+            let layout_context = json!({ "content": content });
+            let html = handlebars
+                .render("layout", &layout_context)
+                .expect("Failed to render layout template");
+
+            debug!("Generated HTML: {}", html);
+            html
         }
-        return html;
     }
 
     impl FromLua for View {

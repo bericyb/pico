@@ -1,4 +1,5 @@
 pub mod http {
+    use log::{debug, error, warn};
     use regex::Regex;
     use serde_json::Value;
     use std::{collections::HashMap, io::Read, net::TcpStream, time::Duration, vec};
@@ -85,7 +86,7 @@ pub mod http {
         loop {
             let n = stream.read(&mut temp).unwrap_or(0);
             if n == 0 {
-                println!("Bad stream with no bytes");
+                error!("Bad stream with no bytes");
                 return Err(ResponseCode::BadRequest);
             }
             buf.extend_from_slice(&temp[..n]);
@@ -95,7 +96,7 @@ pub mod http {
             }
 
             if buf.len() > MAX_HEADER_SIZE {
-                println!("Request headers too large");
+                warn!("Request headers too large");
                 return Err(ResponseCode::HeaderFieldsTooLarge);
             }
         }
@@ -161,18 +162,18 @@ pub mod http {
             Ok(len) => len,
             Err(_) => 0,
         };
-        println!("Content length found, {}", content_length);
+        debug!("Content length found: {}", content_length);
         let mut body_bytes = vec![];
 
         body_bytes.extend_from_slice(read_body);
         let read_len = body_bytes.len();
 
-        println!("Read body byte buffer len {}", read_len);
+        debug!("Read body byte buffer length: {}", read_len);
 
         if read_len > content_length {
             let mut remaining_body: Vec<u8> = vec![0u8; content_length];
 
-            println!("Remaining body length to read: {}", content_length);
+            debug!("Remaining body length to read: {}", content_length);
 
             // TODO: add error handling here
             stream
@@ -184,7 +185,7 @@ pub mod http {
                     body_bytes.extend_from_slice(&remaining_body[..rb]);
                 }
                 Err(e) => {
-                    println!("error reading exact body from TcpStream: {}", e);
+                    error!("Error reading exact body from TcpStream: {}", e);
                     return Err(ResponseCode::BadRequest);
                 }
             };
@@ -210,13 +211,13 @@ pub mod http {
                     .map(|(k, v)| (k.to_string(), v.to_string()))
                     .collect::<HashMap<String, String>>();
                 body = Body::Form(param_map);
-                println!("parsed form body: {:?}", body);
+                debug!("Parsed form body: {:?}", body);
             }
 
             // TODO: Find multipart parsing lib since I don't want to do that. XD
             "mutipart/form-data" => {}
             _ => {
-                println!("unknown content type: {}", content_type);
+                debug!("Unknown content type: {}", content_type);
                 body = Body::Raw(body_bytes);
             }
         }
