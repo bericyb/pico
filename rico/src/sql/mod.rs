@@ -6,8 +6,8 @@ pub mod sql {
         io::Read,
     };
 
-    use log::{debug, error, info, warn};
     use chrono::{DateTime, NaiveDate, NaiveDateTime};
+    use log::{debug, error, info, warn};
     use postgres::{Client, NoTls, Row, types::ToSql};
     use serde_json::{Value, json};
     use sqlparser::{
@@ -211,12 +211,15 @@ pub mod sql {
 
                 // Use the file name as function name (already extracted above)
                 let function_name = &file_name;
-                
+
                 // Drop the function if it exists (ignore errors if it doesn't exist)
                 let drop_sql = format!("DROP FUNCTION IF EXISTS {} CASCADE", function_name);
                 match client.execute(&drop_sql, &[]) {
                     Ok(_) => info!("Dropped existing function: {}", function_name),
-                    Err(e) => debug!("Note: Could not drop function {} (may not exist): {}", function_name, e),
+                    Err(e) => debug!(
+                        "Note: Could not drop function {} (may not exist): {}",
+                        function_name, e
+                    ),
                 }
 
                 // Create the new function

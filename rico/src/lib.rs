@@ -11,9 +11,9 @@ use std::{
     path::Path,
 };
 
-use log::{debug, error, info, warn};
 use chrono::Utc;
 use jsonwebtoken::{Algorithm, DecodingKey, EncodingKey, Header, Validation, decode, encode};
+use log::{debug, error, info, warn};
 use mlua::{Lua, LuaSerdeExt, Table};
 use percent_encoding::percent_decode_str;
 use serde_json::Value;
@@ -112,7 +112,10 @@ fn try_serve_static_file(request_path: &str) -> Result<Vec<u8>, ResponseCode> {
 
     // Security: prevent path traversal attacks (check both original and decoded paths)
     if request_path.contains("..") || decoded_path.contains("..") {
-        debug!("Rejecting request with path traversal attempt: {} (decoded: {})", request_path, decoded_path);
+        debug!(
+            "Rejecting request with path traversal attempt: {} (decoded: {})",
+            request_path, decoded_path
+        );
         return Err(ResponseCode::NotFound);
     }
 
@@ -141,11 +144,14 @@ fn try_serve_static_file(request_path: &str) -> Result<Vec<u8>, ResponseCode> {
 
     // Determine MIME type
     let mime_type = get_mime_type(&file_path);
-    
+
     // Build HTTP response
     let mut headers = HashMap::new();
     headers.insert("Content-Type".to_string(), vec![mime_type.to_string()]);
-    headers.insert("Content-Length".to_string(), vec![file_contents.len().to_string()]);
+    headers.insert(
+        "Content-Length".to_string(),
+        vec![file_contents.len().to_string()],
+    );
 
     let mut response = String::from("HTTP/1.1 200 OK\r\n");
     for (key, values) in headers {
@@ -165,7 +171,11 @@ fn try_serve_static_file(request_path: &str) -> Result<Vec<u8>, ResponseCode> {
     let mut response_bytes = response.into_bytes();
     response_bytes.extend(file_contents);
 
-    debug!("Successfully served static file: {} ({} bytes)", file_path, response_bytes.len());
+    debug!(
+        "Successfully served static file: {} ({} bytes)",
+        file_path,
+        response_bytes.len()
+    );
     Ok(response_bytes)
 }
 
@@ -260,6 +270,26 @@ pub fn create_pico_service(
         Err(e) => return Err(format!("error initializing sql database: {}", e)),
     };
 
+    // Check if all specified functions in config.lua are initialized in the SQL service
+    let mut missing_functions = vec![];
+    for r in routes.iter() {
+        for h in r.1.definitions.iter() {
+            if h.1.sql_function_name.is_some()
+                && sql
+                    .functions
+                    .get(&h.1.sql_function_name.clone().unwrap())
+                    .is_none()
+            {
+                missing_functions.push(h.1.sql_function_name.clone().unwrap())
+            }
+        }
+    }
+    if missing_functions.len() > 0 {
+        return Err(format!(
+            "SQL handler(s) with name(s): {:#?} specified but does not exist.",
+            missing_functions
+        ));
+    }
     let secret_key = std::env::var("PICO_SECRET_KEY").unwrap_or("default_secret".to_string());
 
     return Ok(PicoService {
@@ -383,7 +413,11 @@ impl PicoService {
         &mut self,
         request: PicoRequest,
     ) -> Result<Vec<u8>, ResponseCode> {
-        debug!("Received request: {} {}", request.method, request.path.as_str());
+        debug!(
+            "Received request: {} {}",
+            request.method,
+            request.path.as_str()
+        );
 
         let mut tree = &self.route_tree;
 
@@ -874,7 +908,7 @@ mod tests {
     fn test_static_file_path_traversal_protection() {
         let result = try_serve_static_file("../etc/passwd");
         assert!(result.is_err());
-        
+
         let result2 = try_serve_static_file("/test/../../../etc/passwd");
         assert!(result2.is_err());
     }
@@ -890,15 +924,15 @@ mod tests {
         // This should succeed since we have public/test.html
         let result = try_serve_static_file("/test.html");
         assert!(result.is_ok());
-        
+
         if let Ok(response_bytes) = result {
             let response_str = String::from_utf8_lossy(&response_bytes);
-            
+
             // Should contain HTTP headers
             assert!(response_str.contains("HTTP/1.1 200 OK"));
             assert!(response_str.contains("Content-Type: text/html"));
             assert!(response_str.contains("Content-Length:"));
-            
+
             // Should contain the actual HTML content
             assert!(response_str.contains("Static File Test"));
         }
@@ -910,10 +944,10 @@ mod tests {
         // The file "Tatsuro Yamashita - Come Along.mp3" exists in public/
         let result = try_serve_static_file("/Tatsuro%20Yamashita%20-%20Come%20Along.mp3");
         assert!(result.is_ok());
-        
+
         if let Ok(response_bytes) = result {
             let response_str = String::from_utf8_lossy(&response_bytes[..200]); // Check headers only
-            
+
             // Should contain HTTP headers
             assert!(response_str.contains("HTTP/1.1 200 OK"));
             assert!(response_str.contains("Content-Type: application/octet-stream"));
@@ -926,7 +960,7 @@ mod tests {
         // Test that URL-encoded path traversal is still blocked
         let result = try_serve_static_file("/test%2F..%2F..%2F..%2Fetc%2Fpasswd");
         assert!(result.is_err());
-        
+
         // Test another variant
         let result2 = try_serve_static_file("/%2E%2E%2Fetc%2Fpasswd");
         assert!(result2.is_err());
