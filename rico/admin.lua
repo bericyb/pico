@@ -213,8 +213,6 @@ CREATE TABLE IF NOT EXISTS ping_counter (
     print 'Created 3 essential migrations for database setup'
   end
   if input == 'f' or input == 'a' then
-    local chunk = assert(dofile(name .. 'config.lua'))
-
     -- Create authentication functions
     local auth_user_content = [[CREATE OR REPLACE FUNCTION authenticate_user(user_email text, user_password text)
 RETURNS TABLE(id int, email VARCHAR) AS $$
