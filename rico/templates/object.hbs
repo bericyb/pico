@@ -1,1 +1,34 @@
-<pre>{{{object_json}}}</pre>
+<div class="data-display">
+  {{#if error}}
+    <div class="error-message">
+      <div class="error-icon">⚠️</div>
+      <div class="error-content">
+        <h3>Something went wrong</h3>
+        <p>{{error}}</p>
+      </div>
+    </div>
+  {{else}}
+    <div class="data-cards">
+      {{#each this}}
+        {{#unless (eq @key "json_pretty")}}
+          <div class="data-card">
+            <div class="data-label">{{@key}}</div>
+            <div class="data-value">
+              {{#if this}}
+                {{this}}
+              {{else}}
+                <span class="empty-value">No data</span>
+              {{/if}}
+            </div>
+          </div>
+        {{/unless}}
+      {{/each}}
+    </div>
+    
+    {{!-- JSON details section --}}
+    <details class="technical-details">
+      <summary>View JSON</summary>
+      <pre class="json-fallback">{{json_pretty}}</pre>
+    </details>
+  {{/if}}
+</div>

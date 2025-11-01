@@ -15,6 +15,7 @@ use log::{debug, error, info, warn};
 use chrono::Utc;
 use jsonwebtoken::{Algorithm, DecodingKey, EncodingKey, Header, Validation, decode, encode};
 use mlua::{Lua, LuaSerdeExt, Table};
+use percent_encoding::percent_decode_str;
 use serde_json::Value;
 
 use crate::{
@@ -100,21 +101,30 @@ fn get_mime_type(file_path: &str) -> &'static str {
 
 /// Attempts to serve a static file from the public directory
 fn try_serve_static_file(request_path: &str) -> Result<Vec<u8>, ResponseCode> {
-    // Security: prevent path traversal attacks
-    if request_path.contains("..") {
-        debug!("Rejecting request with path traversal attempt: {}", request_path);
+    // URL decode the request path to handle special characters like spaces
+    let decoded_path = match percent_decode_str(request_path).decode_utf8() {
+        Ok(decoded) => decoded.to_string(),
+        Err(_) => {
+            debug!("Failed to decode URL path: {}", request_path);
+            return Err(ResponseCode::BadRequest);
+        }
+    };
+
+    // Security: prevent path traversal attacks (check both original and decoded paths)
+    if request_path.contains("..") || decoded_path.contains("..") {
+        debug!("Rejecting request with path traversal attempt: {} (decoded: {})", request_path, decoded_path);
         return Err(ResponseCode::NotFound);
     }
 
-    // Construct the file path
+    // Construct the file path using the decoded path
     let mut file_path = String::from("public");
-    if !request_path.starts_with('/') {
+    if !decoded_path.starts_with('/') {
         file_path.push('/');
     }
-    file_path.push_str(request_path);
+    file_path.push_str(&decoded_path);
 
     // Default to index.html for directory requests
-    if request_path.ends_with('/') {
+    if decoded_path.ends_with('/') {
         file_path.push_str("index.html");
     }
 
@@ -892,5 +902,40 @@ mod tests {
             // Should contain the actual HTML content
             assert!(response_str.contains("Static File Test"));
         }
+    }
+
+    #[test]
+    fn test_static_file_url_decoding() {
+        // Test URL decoding for file with spaces
+        // The file "Tatsuro Yamashita - Come Along.mp3" exists in public/
+        let result = try_serve_static_file("/Tatsuro%20Yamashita%20-%20Come%20Along.mp3");
+        assert!(result.is_ok());
+        
+        if let Ok(response_bytes) = result {
+            let response_str = String::from_utf8_lossy(&response_bytes[..200]); // Check headers only
+            
+            // Should contain HTTP headers
+            assert!(response_str.contains("HTTP/1.1 200 OK"));
+            assert!(response_str.contains("Content-Type: application/octet-stream"));
+            assert!(response_str.contains("Content-Length:"));
+        }
+    }
+
+    #[test]
+    fn test_static_file_url_decoding_path_traversal_protection() {
+        // Test that URL-encoded path traversal is still blocked
+        let result = try_serve_static_file("/test%2F..%2F..%2F..%2Fetc%2Fpasswd");
+        assert!(result.is_err());
+        
+        // Test another variant
+        let result2 = try_serve_static_file("/%2E%2E%2Fetc%2Fpasswd");
+        assert!(result2.is_err());
+    }
+
+    #[test]
+    fn test_static_file_invalid_utf8_url() {
+        // Test that invalid UTF-8 sequences in URL encoding are handled gracefully
+        let result = try_serve_static_file("/%C0%80"); // Invalid UTF-8 sequence
+        assert!(result.is_err());
     }
 }

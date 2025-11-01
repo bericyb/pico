@@ -17,7 +17,7 @@ pub mod html {
         Links(Vec<Link>),
         Form(Form),
         Markdown,
-        Object(serde_json::Value),
+        Object,
         Table(HtmlTable),
     }
 
@@ -132,12 +132,24 @@ pub mod html {
                             .render("table", &context)
                             .expect("Failed to render table template")
                     }
-                    Entity::Object(obj) => {
-                        let context = json!({
-                            "object_json": serde_json::to_string_pretty(obj).unwrap_or_default()
-                        });
+                    Entity::Object => {
+                        let json_pretty = serde_json::to_string_pretty(&data).unwrap_or_else(|_| "{}".to_string());
+                        
+                        // For better user experience, provide structured display data
+                        let mut context = serde_json::Map::new();
+                        context.insert("json_pretty".to_string(), serde_json::Value::String(json_pretty));
+                        
+                        // Copy the original data fields for the card-based display (excluding json_pretty)
+                        if let serde_json::Value::Object(obj) = &data {
+                            for (key, value) in obj {
+                                if key != "json_pretty" {
+                                    context.insert(key.clone(), value.clone());
+                                }
+                            }
+                        }
+                        
                         handlebars
-                            .render("object", &context)
+                            .render("object", &serde_json::Value::Object(context))
                             .expect("Failed to render object template")
                     }
                 };
@@ -295,6 +307,9 @@ pub mod html {
                                 view.entities.push(Entity::Markdown);
                             }
                             "TABLE" => {}
+                            "OBJECT" => {
+                                view.entities.push(Entity::Object);
+                            }
                             other => {
                                 return Err(mlua::Error::FromLuaConversionError {
                                     from: "Table",

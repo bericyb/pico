@@ -139,7 +139,15 @@ return {
     },
     ['ping'] = {
       GET = {
+        VIEW = {
+          {
+            TYPE = 'OBJECT',
+          },
+        },
         SQL = 'pong.sql',
+        POSTPROCESS = function(obj, jwt)
+          return { response = obj, timestamp = os.time() }
+        end,
       },
     },
     ['logout'] = {
