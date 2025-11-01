@@ -1,13 +1,13 @@
+use log::{error, info};
 use mlua::LuaSerdeExt;
-use rico::create_pico_service;
-use log::{info, error};
+use picos::create_pico_service;
 
 const ADMIN_SCRIPT: &str = include_str!("../admin.lua");
 
 fn main() -> std::io::Result<()> {
     // Initialize the logger
     env_logger::init();
-    
+
     match std::env::args().nth(1) {
         Some(_) => {
             let args: Vec<String> = std::env::args().skip(1).collect();
@@ -17,7 +17,7 @@ fn main() -> std::io::Result<()> {
                 Err(e) => {
                     error!("Failed to read args: {}", e);
                     panic!("failed to read args, {}", e);
-                },
+                }
             };
 
             match lua.globals().set("arg", lua_args) {

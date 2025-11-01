@@ -1,4 +1,4 @@
-Views in Pico/Rico are a powerful way to define frontend UI components declaratively using Lua tables. They provide a simple but flexible system for building web interfaces without writing HTML directly.
+Views in Pico are a powerful way to define frontend UI components declaratively using Lua tables. They provide a simple but flexible system for building web interfaces without writing HTML directly.
 
 ## What are Views?
 
