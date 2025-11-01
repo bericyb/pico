@@ -18,11 +18,11 @@ If you reach a point where Pico isn't right for you, it's easy to leave. Pico is
 
 To create a new Pico application run:
 ```shell
-pico_server init <application_name> # New directory with a Pico app
+picos init <application_name> # New directory with a Pico app
 # --- or ---
-pico_server init                    # Initialize current directory as a Pico app
+picos init                    # Initialize current directory as a Pico app
 
-pico_server                 # Start the Pico server
+picos                         # Start the Pico server
 
 ```
 

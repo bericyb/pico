@@ -1,5 +1,5 @@
 [package]
-name = "rico"
+name = "picos"
 version = "0.1.0"
 edition = "2024"
 
@@ -26,7 +26,7 @@ uuid = "1.18.1"
 path = "src/lib.rs"
 
 [[bin]]
-name = "pico_server"
+name = "picos"
 path = "src/main.rs"
 
 [[bin]]
