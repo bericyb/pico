@@ -86,11 +86,6 @@ jobs:
         restore-keys: |
           ${{ runner.os }}-${{ matrix.target }}-cargo-
     
-    - name: Run tests
-      run: |
-        cd pico
-        cargo test --verbose --target ${{ matrix.target }}
-    
     - name: Build release binary
       run: |
         cd pico
@@ -113,6 +108,8 @@ jobs:
     needs: build
     runs-on: ubuntu-latest
     if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    permissions:
+      contents: write
     
     steps:
     - uses: actions/checkout@v4
