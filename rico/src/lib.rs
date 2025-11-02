@@ -377,7 +377,7 @@ impl PicoService {
     pub fn start_http_server(&mut self) -> std::io::Result<()> {
         let listener = TcpListener::bind(format!("127.0.0.1:{}", self.port))?;
 
-        info!("Pico server listening on {}", listener.local_addr()?);
+        println!("Pico server listening on {}", listener.local_addr()?);
 
         for stream in listener.incoming() {
             let mut s = match stream {
