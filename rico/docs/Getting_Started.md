@@ -81,13 +81,13 @@ ROUTES = {
 
 ```
 
-| Handlers    | Usage                                                                                                                                                                                                                                     |
-| ----------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| PREPROCESS  | A Lua function whose input is the request's body and returns a new request body.  Used to pre-process a request's body in preparation for SQL execution. Helpful for validation, data manipulation, etc before SQL.                       |
-| SQL         | The name of a SQL file containing the Function you want to execute on request to this route.                                                                                                                                              |
-| POSTPROCESS | A Lua function whose input is the response from the SQL handler and returns a new response body. Helpful for executing logic on SQL responses and transforming SQL responses.                                                             |
-| SETJWT      | A Lua function whose input is the current response body and the current JWT claims and returns a table to be used as the new JWT. Helpful for using SQL results to authenticate users, add and take away permissions or persist sessions. |
-| VIEW        | A table of entities used to render an HTML response. Used to build a rudimentary frontend. More on views [here](VIEWS.md)                                                                                                                 |
+| Handlers    | Usage                                                                                                                                                                                                                                                       |
+| ----------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| [PREPROCESS](preprocess.md)   | A Lua function whose input is the request's body and returns a new request body.  Used to pre-process a request's body in preparation for SQL execution. Helpful for validation, data manipulation, etc before SQL.                       |
+| [SQL](sql.md)                 | The name of a SQL file containing the Function you want to execute on request to this route.                                                                                                                                              |
+| [POSTPROCESS](postprocess.md) | A Lua function whose input is the response from the SQL handler and returns a new response body. Helpful for executing logic on SQL responses and transforming SQL responses.                                                             |
+| [SETJWT](setjwt.md)           | A Lua function whose input is the current response body and the current JWT claims and returns a table to be used as the new JWT. Helpful for using SQL results to authenticate users, add and take away permissions or persist sessions. |
+| [VIEW](views.md)              | A table of entities used to render an HTML response. Used to build a rudimentary frontend. More on views [here](VIEWS.md)                                                                                                                 |
 
 
 ## Request Formation and Parameter Mapping
@@ -108,10 +108,6 @@ All of this data becomes available as key-value pairs that are mapped to your SQ
 
 1. **Exact Name Matching**: The key names in your request body must exactly match the parameter names in your SQL function
 2. **Case Sensitive**: Parameter names are case-sensitive
-3. **Priority Order**: 
-   - First, Pico looks in the request body (JSON or form data)
-   - Then, it falls back to route parameters (like `:id` from URL paths)
-   - If a required parameter is missing, the request fails with a BadRequest error
 
 ### Examples
 
@@ -214,42 +210,6 @@ Application
         └── logo.png     # Served at /images/logo.png
 ```
 
-### Security Features
-
-- **Path traversal protection**: Requests containing `../` are automatically blocked
-- **Directory indexing**: Requests to directories automatically serve `index.html` if it exists
-- **Safe file serving**: Only files within the `public/` directory can be served
-
-### Example Usage
-
-Create a simple HTML page:
-```html
-<!-- public/index.html -->
-<!DOCTYPE html>
-<html>
-<head>
-    <title>My Pico App</title>
-    <link rel="stylesheet" href="/styles.css">
-</head>
-<body>
-    <h1>Welcome to Pico!</h1>
-    <script src="/app.js"></script>
-</body>
-</html>
-```
-
-With corresponding CSS:
-```css
-/* public/styles.css */
-body {
-    font-family: Arial, sans-serif;
-    margin: 0;
-    padding: 20px;
-}
-```
-
-These files will be automatically served when you visit `/` and `/styles.css` respectively.
-
 ## Advanced Configuration
 
 Because everything is a Lua table, you can decompose your `config.lua` into different files for simplicity.
@@ -264,7 +224,7 @@ return {
     ...
 } 
 
---- users_handlers.lua
+--- login_handler.lua
 return {
 	POST = {
 		PREPROCESS = function(request_body)
