@@ -1,7 +1,12 @@
 [package]
 name = "picos"
+description = "A minimal web application framework with Lua scripting and PostgreSQL integration."
 version = "0.1.0"
 edition = "2024"
+license = "MIT"
+authors = ["Beric Bearnson"]
+repository = "https://github.com/bericyb/pico"
+keywords = ["web", "framework", "lua", "postgresql", "scripting", "minimal"]
 
 [dependencies]
 chrono = "0.4.42"
