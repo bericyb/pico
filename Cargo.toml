@@ -1,7 +1,7 @@
 [package]
 name = "picos"
 description = "A minimal web application framework with Lua scripting and PostgreSQL integration."
-version = "0.1.2"
+version = "0.1.3"
 edition = "2024"
 license = "MIT"
 authors = ["Beric Bearnson"]
