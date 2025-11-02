@@ -16,6 +16,18 @@ Pico is a good option.
 
 If you reach a point where Pico isn't right for you, it's easy to leave. Pico is with Postgres which provides plenty of escape hatches and scalability options. Leaving Pico is easy as running pg_dump or making a new connection to the Postgres database from any other application layer. "It's just a database!"
 
+# Installation
+
+Download from [releases](https://github.com/bericyb/pico/releases) or build from source:
+
+```shell
+# From source
+git clone https://github.com/bericyb/pico.git && cd pico/pico && cargo build --release --bin picos
+
+# Or download release and install
+curl -L https://github.com/bericyb/pico/releases/latest/download/picos-linux-x86_64 -o picos && chmod +x picos && sudo mv picos /usr/local/bin/
+```
+
 # Getting Started
 
 To create a new Pico application run the Pico server binary with `picos`:
