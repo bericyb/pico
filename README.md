@@ -18,14 +18,12 @@ If you reach a point where Pico isn't right for you, it's easy to leave. Pico is
 
 # Installation
 
-Download from [releases](https://github.com/bericyb/pico/releases) or build from source:
-
 ```shell
-# From source
-git clone https://github.com/bericyb/pico.git && cd pico/pico && cargo build --release --bin picos
+# Preferred method
+cargo install pico
 
-# Or download release and install
-curl -L https://github.com/bericyb/pico/releases/latest/download/picos-linux-x86_64 -o picos && chmod +x picos && sudo mv picos /usr/local/bin/
+# Or build from source
+git clone https://github.com/bericyb/pico.git && cd pico && cargo build --release --bin picos
 ```
 
 # Getting Started
