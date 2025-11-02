@@ -9,9 +9,9 @@ Pico's philosophy is that simple CRUD services should have a minimal amount of f
 Pico is not 1.0 yet, and should not be used for production workloads. However, Pico's philosophy is that relational SQL is a resilliant and healthy foundation for any CRUD application. Pico is small, and fast (in terms of developer experience), which lends itself to quick prototyping and delivery of value. 
 
 Whenever you find yourself saying:
-    "I just want to store this in a database, and see it on a webpage",
-    "I just want a simple HTTP API for this data",
-    "I just want to write some raw SQL, I don't need a damn ORM."
+- "I just want to store this in a database, and see it on a webpage",
+- "I just want a simple HTTP API for this data",
+- "I just want to write some raw SQL, I don't need a damn ORM."
 Pico is a good option.
 
 If you reach a point where Pico isn't right for you, it's easy to leave. Pico is with Postgres which provides plenty of escape hatches and scalability options. Leaving Pico is easy as running pg_dump or making a new connection to the Postgres database from any other application layer. "It's just a database!"
