@@ -1,7 +1,7 @@
 pub mod http {
     use log::{debug, error, warn};
     use regex::Regex;
-    use serde_json::Value;
+    use serde_json::{json, Value};
     use std::{collections::HashMap, io::Read, net::TcpStream, time::Duration, vec};
 
     use crate::{PicoRequest, route::route::Method};
@@ -17,11 +17,13 @@ pub mod http {
         Raw(Vec<u8>),
     }
 
+    #[derive(Debug, Clone)]
     pub enum ResponseCode {
         Ok,
         NotFound,
         InternalError,
         BadRequest,
+        Unauthorized,
         HeaderFieldsTooLarge,
     }
 
@@ -32,19 +34,92 @@ pub mod http {
                 ResponseCode::NotFound => "Not Found",
                 ResponseCode::InternalError => "Internal Server Error",
                 ResponseCode::BadRequest => "Bad Request",
+                ResponseCode::Unauthorized => "Unauthorized",
                 ResponseCode::HeaderFieldsTooLarge => "Header Fields Too Large",
             }
         }
+
+        pub fn to_code(&self) -> u16 {
+            match self {
+                ResponseCode::Ok => 200,
+                ResponseCode::NotFound => 404,
+                ResponseCode::InternalError => 500,
+                ResponseCode::BadRequest => 400,
+                ResponseCode::Unauthorized => 401,
+                ResponseCode::HeaderFieldsTooLarge => 431,
+            }
+        }
+
         pub fn to_bytes(&self) -> &[u8] {
             match self {
                 ResponseCode::Ok => b"HTTP/1.1 200 OK\r\n\r\n",
                 ResponseCode::NotFound => b"HTTP/1.1 404 Not Found\r\n\r\n",
                 ResponseCode::InternalError => b"HTTP/1.1 500 Internal Server Error\r\n\r\n",
                 ResponseCode::BadRequest => b"HTTP/1.1 400 Bad Request\r\n\r\n",
+                ResponseCode::Unauthorized => b"HTTP/1.1 401 Unauthorized\r\n\r\n",
                 ResponseCode::HeaderFieldsTooLarge => {
                     b"HTTP/1.1 431 Header Fields Too Large\r\n\r\n"
                 }
             }
+        }
+    }
+
+    pub struct PicoResponse {
+        pub status: ResponseCode,
+        pub body: Vec<u8>,
+        pub headers: HashMap<String, Vec<String>>,
+    }
+
+    impl PicoResponse {
+        pub fn success(body: Vec<u8>) -> Self {
+            Self {
+                status: ResponseCode::Ok,
+                body,
+                headers: HashMap::new(),
+            }
+        }
+
+        pub fn error(status: ResponseCode, message: &str) -> Self {
+            let error_json = json!({
+                "error": {
+                    "message": message,
+                    "code": status.to_str()
+                }
+            });
+
+            let mut headers = HashMap::new();
+            headers.insert("Content-Type".to_string(), vec!["application/json".to_string()]);
+
+            Self {
+                status,
+                body: error_json.to_string().into_bytes(),
+                headers,
+            }
+        }
+
+        pub fn to_http_bytes(&self) -> Vec<u8> {
+            let status_line = format!(
+                "HTTP/1.1 {} {}\r\n",
+                self.status.to_code(),
+                self.status.to_str()
+            );
+
+            let mut headers_str = String::new();
+            for (key, values) in &self.headers {
+                for (i, value) in values.iter().enumerate() {
+                    if i == 0 {
+                        headers_str.push_str(&format!("{}: {}", key, value));
+                    } else {
+                        headers_str.push_str(&format!("; {}", value));
+                    }
+                }
+                headers_str.push_str("\r\n");
+            }
+
+            let response = format!("{}{}\r\n", status_line, headers_str);
+            let mut bytes = response.into_bytes();
+            bytes.extend_from_slice(&self.body);
+            bytes
         }
     }
 

@@ -21,35 +21,67 @@ use serde_json::Value;
 use crate::{
     cron::cron::Crons,
     html::html::View,
-    http::http::{Body, ResponseCode, handle_stream},
+    http::http::{Body, PicoResponse, ResponseCode, handle_stream},
     route::route::{Method, Route, RouteHandler},
     sql::sql::{SQL, SQL_FUNCTION_TEMPLATE, initialize_sql_service},
 };
 
 /// Extracts JWT claims from pico_jwt cookie in request headers
 fn extract_jwt_claims(headers: &HashMap<String, Vec<String>>, secret_key: &str) -> Option<Value> {
-    let cookie_headers = headers.get("cookie")?;
+    debug!("=== JWT EXTRACTION DEBUG ===");
+    debug!("All headers: {:#?}", headers);
 
-    for cookie_header in cookie_headers {
-        for cookie in cookie_header.split(';') {
+    let cookie_headers = headers.get("cookie");
+    debug!("Cookie headers found: {:?}", cookie_headers.is_some());
+
+    let cookie_headers = match cookie_headers {
+        Some(headers) => {
+            debug!("Cookie headers content: {:#?}", headers);
+            headers
+        }
+        None => {
+            debug!("No 'cookie' header found in request");
+            return None;
+        }
+    };
+
+    for (i, cookie_header) in cookie_headers.iter().enumerate() {
+        debug!("Processing cookie header {}: '{}'", i, cookie_header);
+
+        for (j, cookie) in cookie_header.split(';').enumerate() {
             let cookie = cookie.trim();
+            debug!("  Cookie {}: '{}'", j, cookie);
+
             if cookie.starts_with("pico_jwt=") {
                 let jwt_token = &cookie[9..]; // Remove "pico_jwt=" prefix
+                debug!("Found pico_jwt cookie with token: '{}'", jwt_token);
 
-                // Create validation - use default HS256 algorithm
-                let validation = Validation::new(Algorithm::HS256);
+                // Create validation - use default HS256 algorithm, but don't require exp claim
+                let mut validation = Validation::new(Algorithm::HS256);
+                validation.required_spec_claims.remove("exp");
 
                 match decode::<Value>(
                     jwt_token,
                     &DecodingKey::from_secret(secret_key.as_ref()),
                     &validation,
                 ) {
-                    Ok(token_data) => return Some(token_data.claims),
-                    Err(_) => continue, // Invalid JWT, try next cookie
+                    Ok(token_data) => {
+                        debug!(
+                            "JWT successfully decoded with claims: {:#?}",
+                            token_data.claims
+                        );
+                        return Some(token_data.claims);
+                    }
+                    Err(e) => {
+                        debug!("JWT decode failed: {}", e);
+                        continue; // Invalid JWT, try next cookie
+                    }
                 }
             }
         }
     }
+
+    debug!("No valid pico_jwt cookie found");
     None
 }
 
@@ -75,6 +107,38 @@ fn call_lua_function_with_optional_jwt(
                 Err(e)
             }
         }
+    }
+}
+
+/// Extracts clean error message from Lua errors, especially user-triggered error() calls
+fn extract_lua_error_message(error: &mlua::Error) -> String {
+    match error {
+        mlua::Error::RuntimeError(msg) => {
+            // Extract just the user error message, not full stack trace
+            if let Some(user_msg) = msg.split("stack traceback:").next() {
+                // Remove "error: " prefix if present and clean up
+                let cleaned = user_msg.trim();
+                if cleaned.starts_with("error: ") {
+                    cleaned[7..].trim().to_string()
+                } else {
+                    cleaned.to_string()
+                }
+            } else {
+                msg.clone()
+            }
+        }
+        _ => error.to_string(),
+    }
+}
+
+/// Determines if a Lua error should be treated as a user error (vs system error)
+fn is_user_lua_error(error: &mlua::Error) -> bool {
+    match error {
+        mlua::Error::RuntimeError(msg) => {
+            // User called error() function
+            msg.contains("error: ") || msg.starts_with("error: ")
+        }
+        _ => false,
     }
 }
 
@@ -198,12 +262,18 @@ pub struct RouteTree {
 
 impl RouteTree {
     pub fn to_string(&self) -> String {
+        self.to_string_with_indent(0)
+    }
+    
+    fn to_string_with_indent(&self, indent: usize) -> String {
         let mut res = String::new();
-
-        for node in self.nodes.clone() {
-            res = res + &node.0 + ":\n\t" + &(node.1.clone()).to_string();
+        let indent_str = "  ".repeat(indent);
+        
+        for (key, node) in &self.nodes {
+            res.push_str(&format!("{}{}:\n", indent_str, key));
+            res.push_str(&node.to_string_with_indent(indent + 1));
         }
-        return res;
+        res
     }
 }
 
@@ -275,13 +345,12 @@ pub fn create_pico_service(
     let mut missing_functions = vec![];
     for r in routes.iter() {
         for h in r.1.definitions.iter() {
-            if h.1.sql_function_name.is_some()
-                && sql
-                    .functions
-                    .get(&h.1.sql_function_name.clone().unwrap())
-                    .is_none()
-            {
-                missing_functions.push(h.1.sql_function_name.clone().unwrap())
+            if h.1.sql_function_name.is_some() {
+                let sql_name = h.1.sql_function_name.clone().unwrap();
+                let func_name = sql_name.strip_suffix(".sql").unwrap_or(&sql_name);
+                if sql.functions.get(func_name).is_none() {
+                    missing_functions.push(h.1.sql_function_name.clone().unwrap())
+                }
             }
         }
     }
@@ -379,6 +448,16 @@ impl PicoService {
 
         println!("Pico server listening on {}", listener.local_addr()?);
 
+        // Debug: Display all routes in the route tree
+        debug!("Route tree structure:\n{}", self.route_tree.to_string());
+
+        // Debug: Display all configured routes with their methods
+        debug!("Configured routes:");
+        for (route_path, route) in &self.routes {
+            let methods: Vec<String> = route.definitions.keys().map(|m| m.to_string()).collect();
+            debug!("  {} -> [{}]", route_path, methods.join(", "));
+        }
+
         for stream in listener.incoming() {
             let mut s = match stream {
                 Err(e) => {
@@ -388,17 +467,10 @@ impl PicoService {
                 Ok(s) => s,
             };
             match handle_stream(&mut s) {
-                Ok(pr) => match self.handle_http_pico_request(pr) {
-                    Ok(response_bytes) => {
-                        // TODO: implement failed write retry logic
-                        let _nbw = s.write(&response_bytes).unwrap();
-                    }
-                    Err(rc) => {
-                        // TODO: implement failed write retry logic and abstract to write response
-                        // code
-                        let _nbw = s.write(&rc.to_bytes()).unwrap();
-                    }
-                },
+                Ok(pr) => {
+                    let response = self.handle_http_pico_request(pr);
+                    let _nbw = s.write(&response.to_http_bytes()).unwrap();
+                }
                 Err(rc) => {
                     // TODO: implement failed write retry logic and abstract to write response
                     // code
@@ -409,10 +481,7 @@ impl PicoService {
         return Ok(());
     }
 
-    pub fn handle_http_pico_request(
-        &mut self,
-        request: PicoRequest,
-    ) -> Result<Vec<u8>, ResponseCode> {
+    pub fn handle_http_pico_request(&mut self, request: PicoRequest) -> PicoResponse {
         debug!(
             "Received request: {} {}",
             request.method,
@@ -431,21 +500,38 @@ impl PicoService {
             match tree.nodes.get(&seg.to_string()) {
                 Some(subtree) => {
                     debug!("Found exact match for segment");
+                    if !pico_route_path.is_empty() {
+                        pico_route_path.push('/');
+                    }
                     pico_route_path = pico_route_path + &subtree.parameter_name;
                     tree = &subtree;
                 }
-                None => match tree.nodes.get(&"*".to_string()) {
-                    Some(subtree) => {
-                        debug!("Wildcard match found for segment");
-                        route_parameters.insert(subtree.parameter_name.clone(), seg.to_string());
-                        pico_route_path = pico_route_path + &subtree.parameter_name;
-                        tree = &subtree;
+                None => {
+                    // Try static file first before wildcard routes
+                    debug!("No exact match found, checking for static file before wildcard routes");
+                    if let Ok(static_response) = try_serve_static_file(&request.path) {
+                        debug!("Static file found and served");
+                        return PicoResponse::success(static_response);
                     }
-                    None => {
-                        debug!("No route match found for segment, trying static file fallback");
-                        return try_serve_static_file(&request.path);
+
+                    // If no static file found, try wildcard route match
+                    match tree.nodes.get(&"*".to_string()) {
+                        Some(subtree) => {
+                            debug!("Wildcard match found for segment");
+                            route_parameters
+                                .insert(subtree.parameter_name.clone(), seg.to_string());
+                            if !pico_route_path.is_empty() {
+                                pico_route_path.push('/');
+                            }
+                            pico_route_path = pico_route_path + &subtree.parameter_name;
+                            tree = &subtree;
+                        }
+                        None => {
+                            debug!("No route match found for segment");
+                            return PicoResponse::error(ResponseCode::NotFound, "Route not found");
+                        }
                     }
-                },
+                }
             }
         }
 
@@ -455,7 +541,7 @@ impl PicoService {
             Some(r) => r,
             None => {
                 debug!("No route handlers found for {}", pico_route_path);
-                return Err(ResponseCode::NotFound);
+                return PicoResponse::error(ResponseCode::NotFound, "Route not found");
             }
         };
 
@@ -467,11 +553,19 @@ impl PicoService {
                     pico_route_path,
                     request.method.to_string()
                 );
-                return Err(ResponseCode::NotFound);
+                return PicoResponse::error(
+                    ResponseCode::NotFound,
+                    "Method not allowed for this route",
+                );
             }
         };
 
         debug!("Route handler: {:#?}", route_handler);
+
+        // Extract JWT claims once at the beginning for use throughout the pipeline
+        let mut jwt_claims = extract_jwt_claims(&request.headers, &self.secret_key);
+        debug!("Extracted JWT claims: {:#?}", jwt_claims);
+
         let mut json_body = match &route_handler.sql_function_name {
             Some(file_name) => {
                 debug!(
@@ -486,33 +580,33 @@ impl PicoService {
                             "Internal error getting sql function {} for route {}",
                             function_name, pico_route_path,
                         );
-                        return Err(ResponseCode::InternalError);
+                        return PicoResponse::error(
+                            ResponseCode::InternalError,
+                            "SQL function not found",
+                        );
                     }
                 };
                 let mut function_input: HashMap<String, Value> = HashMap::new();
+
+                // STEP 1: Build initial function_input from request body and route parameters
+                debug!("=== INITIAL PARAMETER BUILDING ===");
+                debug!("JSON body provided: {:#?}", request.body);
+                debug!("Route parameters provided: {:#?}", route_parameters);
+                debug!("Query parameters provided: {:#?}", request.query);
+
                 match request.body {
                     Body::Json(j_body) => {
-                        for param in function.parameters.clone() {
-                            let val = match j_body.get(&param.clone()) {
-                                Some(b_val) => b_val,
-                                None => match route_parameters.get(&param.clone()) {
-                                    Some(rp_val) => &Value::String(rp_val.to_string()),
-                                    None => return Err(ResponseCode::BadRequest),
-                                },
-                            };
-                            function_input.insert(param, val.clone());
+                        // Add all JSON body parameters
+                        if let Some(obj) = j_body.as_object() {
+                            for (key, value) in obj {
+                                function_input.insert(key.clone(), value.clone());
+                            }
                         }
                     }
                     Body::Form(hash_map) => {
-                        for param in function.parameters.clone() {
-                            let val = match hash_map.get(&param.clone()) {
-                                Some(qp) => qp,
-                                None => match route_parameters.get(&param.clone()) {
-                                    Some(rp_val) => &rp_val.to_string(),
-                                    None => return Err(ResponseCode::BadRequest),
-                                },
-                            };
-                            function_input.insert(param, Value::String(val.clone()));
+                        // Add all form parameters
+                        for (key, value) in hash_map {
+                            function_input.insert(key.clone(), Value::String(value.clone()));
                         }
                     }
                     Body::Raw(_items) => {
@@ -520,23 +614,32 @@ impl PicoService {
                         todo!();
                     }
                 }
-                debug!("Function input: {:#?}", function_input);
+
+                // Add route parameters (these can override body parameters)
+                for (key, value) in route_parameters {
+                    function_input.insert(key.clone(), Value::String(value.clone()));
+                }
+
+                debug!(
+                    "Initial function_input before PREPROCESS: {:#?}",
+                    function_input
+                );
 
                 // PREPROCESS
                 // Apply preprocessing if defined
                 if let Some(pre_process_fn) = &route_handler.pre_process {
-                    debug!("Preprocessing request using lua function");
-
-                    // Extract JWT claims from cookies
-                    let jwt_claims = extract_jwt_claims(&request.headers, &self.secret_key);
+                    debug!(
+                        "Preprocessing request using lua function with JWT: {:#?}",
+                        jwt_claims
+                    );
 
                     // Create function input as JSON
                     let function_input_json =
                         serde_json::to_value(&function_input).unwrap_or(Value::Null);
                     let lua_input: mlua::Value = self.lua.to_value(&function_input_json).unwrap();
 
-                    let lua_jwt: mlua::Value = match jwt_claims {
-                        Some(claims) => self.lua.to_value(&claims).unwrap(),
+                    let lua_jwt: mlua::Value = match &jwt_claims {
+                        Some(claims) => self.lua.to_value(claims).unwrap(),
                         None => mlua::Value::Nil,
                     };
 
@@ -547,6 +650,14 @@ impl PicoService {
                     ) {
                         Ok(p) => p,
                         Err(e) => {
+                            // Check if this is a user error (from Lua error() call)
+                            if is_user_lua_error(&e) {
+                                return PicoResponse::error(
+                                    ResponseCode::BadRequest,
+                                    &extract_lua_error_message(&e),
+                                );
+                            }
+                            // System error - continue with fallback behavior
                             warn!("Error preprocessing request: {}", e);
                             lua_input.clone()
                         }
@@ -569,6 +680,38 @@ impl PicoService {
                     }
                 }
 
+                // STEP 3: Validate that all required SQL function parameters are present
+                debug!("=== PARAMETER VALIDATION AFTER PREPROCESS ===");
+                debug!("Function expects parameters: {:#?}", function.parameters);
+                debug!(
+                    "Final function_input after PREPROCESS: {:#?}",
+                    function_input
+                );
+
+                for param in &function.parameters {
+                    if !function_input.contains_key(param) {
+                        debug!("=== MISSING PARAMETER ERROR ===");
+                        debug!(
+                            "Required parameter '{}' not found in final function_input",
+                            param
+                        );
+                        debug!(
+                            "Available parameters: {:#?}",
+                            function_input.keys().collect::<Vec<_>>()
+                        );
+                        debug!("This could be due to:");
+                        debug!("  1. Parameter missing from request body/route params");
+                        debug!(
+                            "  2. PREPROCESS function not adding/transforming the required parameter"
+                        );
+                        return PicoResponse::error(
+                            ResponseCode::BadRequest,
+                            &format!("Missing required parameter: {}", param),
+                        );
+                    }
+                }
+                debug!("All required parameters validated successfully");
+
                 match function.execute(&mut self.sql.connection, function_input) {
                     Ok(value) => value,
                     Err(rc) => {
@@ -578,7 +721,10 @@ impl PicoService {
                             pico_route_path,
                             rc.to_str()
                         );
-                        return Err(rc);
+                        return PicoResponse::error(
+                            rc.clone(),
+                            &format!("SQL execution failed: {}", rc.to_str()),
+                        );
                     }
                 }
             }
@@ -588,50 +734,13 @@ impl PicoService {
             }
         };
 
-        // POSTPROCESS
-        // Overwrite json_body with transformed value
-        debug!("Initial response body: {}", json_body);
-        if let Some(post_process_fn) = &route_handler.post_process {
-            debug!("Transforming response {} using lua function", json_body);
-
-            // Extract JWT claims from cookies
-            let jwt_claims = extract_jwt_claims(&request.headers, &self.secret_key);
-
-            let lua_body: mlua::Value = match json_body.is_null() {
-                true => mlua::Value::Table(self.lua.create_table().unwrap()),
-                false => self.lua.to_value(&json_body).unwrap(),
-            };
-
-            let lua_jwt: mlua::Value = match jwt_claims {
-                Some(claims) => self.lua.to_value(&claims).unwrap(),
-                None => mlua::Value::Nil,
-            };
-
-            let transformed: mlua::Value = match call_lua_function_with_optional_jwt(
-                post_process_fn,
-                lua_body.clone(),
-                lua_jwt,
-            ) {
-                Ok(t) => t,
-                Err(e) => {
-                    warn!("Error transforming response body: {}", e);
-                    lua_body.clone()
-                }
-            };
-
-            json_body = match self.lua.from_value(transformed) {
-                Ok(jb) => jb,
-                Err(e) => {
-                    warn!("Error transforming response body back to json: {}", e);
-                    json_body
-                }
-            };
-        }
-
         // SETJWT
         let mut headers: HashMap<String, Vec<String>> = HashMap::new();
         if let Some(set_jwt_fn) = &route_handler.set_jwt {
-            debug!("Setting JWT using lua function");
+            debug!(
+                "Setting JWT using lua function with SQL body: {:#?} and current JWT: {:#?}",
+                json_body, jwt_claims
+            );
 
             let lua_body: mlua::Value = match json_body.is_null() {
                 true => mlua::Value::Table(self.lua.create_table().unwrap()),
@@ -641,16 +750,19 @@ impl PicoService {
                 Ok(claims) => {
                     debug!("Setting JWT: {:#?}", claims);
                     // Convert Lua value to JSON for JWT encoding
-                    let jwt_claims: Value = match self.lua.from_value(claims) {
+                    let new_jwt_claims: Value = match self.lua.from_value(claims) {
                         Ok(jc) => jc,
                         Err(e) => {
                             error!("Error converting lua claims to json: {}", e);
-                            return Err(ResponseCode::InternalError);
+                            return PicoResponse::error(
+                                ResponseCode::InternalError,
+                                "JWT claims conversion failed",
+                            );
                         }
                     };
                     let jwt = match encode(
                         &Header::default(),
-                        &jwt_claims,
+                        &new_jwt_claims,
                         &EncodingKey::from_secret(self.secret_key.as_ref()),
                     ) {
                         Ok(jwt) => jwt,
@@ -664,10 +776,68 @@ impl PicoService {
                             "Set-Cookie".to_string(),
                             vec![format!("pico_jwt={}; HttpOnly; Path=/;", jwt)],
                         );
+                        // Update jwt_claims for use in POSTPROCESS
+                        jwt_claims = Some(new_jwt_claims);
                     }
                 }
                 Err(e) => {
+                    // Check if this is a user error (from Lua error() call)
+                    if is_user_lua_error(&e) {
+                        return PicoResponse::error(
+                            ResponseCode::Unauthorized,
+                            &extract_lua_error_message(&e),
+                        );
+                    }
+                    // System error - log and continue
                     error!("Error setting JWT: {}", e);
+                }
+            };
+        }
+
+        // POSTPROCESS
+        // Overwrite json_body with transformed value
+        debug!("Initial response body: {}", json_body);
+        if let Some(post_process_fn) = &route_handler.post_process {
+            debug!(
+                "Transforming response {} using lua function with JWT: {:#?}",
+                json_body, jwt_claims
+            );
+
+            let lua_body: mlua::Value = match json_body.is_null() {
+                true => mlua::Value::Table(self.lua.create_table().unwrap()),
+                false => self.lua.to_value(&json_body).unwrap(),
+            };
+
+            let lua_jwt: mlua::Value = match &jwt_claims {
+                Some(claims) => self.lua.to_value(claims).unwrap(),
+                None => mlua::Value::Nil,
+            };
+
+            let transformed: mlua::Value = match call_lua_function_with_optional_jwt(
+                post_process_fn,
+                lua_body.clone(),
+                lua_jwt,
+            ) {
+                Ok(t) => t,
+                Err(e) => {
+                    // Check if this is a user error (from Lua error() call)
+                    if is_user_lua_error(&e) {
+                        return PicoResponse::error(
+                            ResponseCode::BadRequest,
+                            &extract_lua_error_message(&e),
+                        );
+                    }
+                    // System error - continue with fallback behavior
+                    warn!("Error transforming response body: {}", e);
+                    lua_body.clone()
+                }
+            };
+
+            json_body = match self.lua.from_value(transformed) {
+                Ok(jb) => jb,
+                Err(e) => {
+                    warn!("Error transforming response body back to json: {}", e);
+                    json_body
                 }
             };
         }
@@ -710,20 +880,11 @@ impl PicoService {
             vec![format!("{}", body_bytes.len())],
         );
 
-        let mut resp: String = "HTTP/1.1 200 OK\r\n".to_string();
-        for (k, vs) in headers {
-            resp = resp + &k + ": ";
-            for (i, v) in vs.clone().into_iter().enumerate() {
-                if i > 1 && i < vs.len() - 1 {
-                    resp = resp + "; ";
-                }
-                resp = resp + &v;
-            }
-            resp = resp + "\r\n";
-        }
+        // Create PicoResponse with proper headers and body
+        let mut response = PicoResponse::success(body_bytes.to_vec());
+        response.headers = headers;
 
-        resp = resp + "\r\n";
-        Ok((resp + &binding).as_bytes().to_vec())
+        response
     }
 }
 
@@ -870,19 +1031,19 @@ pub fn validate_pico_config(
     // Create route tree
     for (route, _) in &routes {
         debug!("Creating route {}", route);
+        let mut current = &mut route_tree;
         for seg in route.split("/") {
-            let mut _current = &mut route_tree;
             if seg.is_empty() {
                 continue;
             }
             // Add a wildcard if parameterized
             if seg.chars().nth(0).unwrap().to_string() == ":" {
-                _current = _current.nodes.entry("*".to_string()).or_insert(RouteTree {
+                current = current.nodes.entry("*".to_string()).or_insert(RouteTree {
                     nodes: HashMap::new(),
                     parameter_name: seg.to_string(),
                 });
             } else {
-                _current = _current.nodes.entry(seg.to_string()).or_insert(RouteTree {
+                current = current.nodes.entry(seg.to_string()).or_insert(RouteTree {
                     nodes: HashMap::new(),
                     parameter_name: seg.to_string(),
                 });

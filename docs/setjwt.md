@@ -1,6 +1,6 @@
 # SETJWT Handler
 
-The SETJWT handler manages JSON Web Tokens (JWTs) for authentication and session management. It runs after POSTPROCESS and allows you to create, update, or invalidate JWTs based on the response data and current authentication state.
+The SETJWT handler manages JSON Web Tokens (JWTs) for authentication and session management. It runs after SQL and before POSTPROCESS, allowing you to create, update, or invalidate JWTs based on the raw response data.
 
 ## What is SETJWT for?
 
@@ -22,7 +22,7 @@ end
 ```
 
 The function receives:
-- `resp`: The response from POSTPROCESS (or SQL if no POSTPROCESS)
+- `resp`: The response from SQL (before POSTPROCESS transformation)
 - `jwt`: Current JWT claims (nil if no token exists)
 
 And returns:
@@ -271,17 +271,8 @@ end
         }
     end,
     SQL = "authenticate_user.sql",
-    POSTPROCESS = function(resp)
-        if resp.id then
-            resp.login_successful = true
-        else
-            resp.login_successful = false
-            resp.error = "Invalid credentials"
-        end
-        return resp
-    end,
     SETJWT = function(resp, jwt)
-        if resp.login_successful then
+        if resp.id then
             return {
                 user_id = resp.id,
                 username = resp.username,
@@ -290,6 +281,13 @@ end
             }
         end
         return nil -- Clear any existing JWT on failed login
+    end,
+    POSTPROCESS = function(resp)
+        if resp.id then
+            return "Login successful! Welcome back."
+        else
+            return "Invalid credentials"
+        end
     end,
     VIEW = {
         { TYPE = "MARKDOWN" }

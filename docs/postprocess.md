@@ -1,16 +1,19 @@
 # POSTPROCESS Handler
 
-The POSTPROCESS handler is executed after the SQL handler and allows you to transform, format, and enhance the database response before it's sent to the client or passed to the next handler in the pipeline.
+The POSTPROCESS handler is executed after the SQL and SETJWT handlers and allows you to transform, format, and enhance the database response before it's sent to the client or rendered by the VIEW system. This is the final transformation step in the request pipeline.
 
 ## What is POSTPROCESS for?
 
-POSTPROCESS is your opportunity to shape the final response. Use it when you need to:
+POSTPROCESS is your opportunity to shape the final response before it reaches the client or VIEW system. Use it when you need to:
 - Transform SQL results into client-friendly formats
 - Add computed fields or metadata
 - Filter or sanitize sensitive data
 - Format data for specific use cases
 - Combine multiple SQL results
 - Handle error cases and provide meaningful messages
+- Create user-facing response messages
+
+**Note**: POSTPROCESS runs after SETJWT, so JWT authentication decisions have already been made based on the raw SQL response.
 
 ## Signature
 
@@ -29,9 +32,9 @@ end
 
 The function receives:
 - `resp`: The SQL handler's response as its primary input
-- `jwt` (optional): The current JWT claims if a user is authenticated
+- `jwt` (optional): The current JWT claims as determined by SETJWT
 
-It must return the (potentially modified) response that will be passed to the next handler or sent as the final response.
+It must return the (potentially modified) response that will be sent as the final response or passed to the VIEW system for rendering.
 
 ## Examples
 
@@ -328,7 +331,16 @@ POSTPROCESS works with the complete handler pipeline:
         return { user_id = req.id }
     end,
     SQL = "get_user_profile.sql",
-    POSTPROCESS = function(resp)
+    SETJWT = function(resp, jwt)
+        -- JWT handler receives the raw SQL response
+        if resp.id then
+            jwt = jwt or {}
+            jwt.user_id = resp.id
+            return jwt
+        end
+        return jwt
+    end,
+    POSTPROCESS = function(resp, jwt)
         -- Remove sensitive data
         resp.password_hash = nil
         
@@ -336,13 +348,6 @@ POSTPROCESS works with the complete handler pipeline:
         resp.profile_complete = (resp.bio and resp.avatar) and true or false
         
         return resp
-    end,
-    SETJWT = function(resp, jwt)
-        -- JWT handler receives the postprocessed response
-        if resp.id then
-            jwt.user_id = resp.id
-            return jwt
-        end
     end
 }
 ```

@@ -44,45 +44,71 @@ pub mod sql {
                 }
             }
             // 1. Convert Vec<Value> to Vec<Box<dyn ToSql + Sync>> via explicit matching
+            debug!("Converting parameters to SQL types. Input params: {:#?}", &ingestion_params);
             let boxed_params: Vec<Box<dyn ToSql + Sync>> = ingestion_params.clone()
             .into_iter() // Consume the Vec to take ownership of each Value
-            .map(|v| {
+            .enumerate()
+            .map(|(idx, v)| {
+                debug!("Converting parameter {} of type: {}", idx, match &v {
+                    Value::String(_) => "String",
+                    Value::Number(_) => "Number", 
+                    Value::Bool(_) => "Bool",
+                    Value::Null => "Null",
+                    Value::Array(_) => "Array",
+                    Value::Object(_) => "Object",
+                });
                 match v {
                     // Handle String values (maps to TEXT/VARCHAR)
                     Value::String(s) => {
+                        debug!("Converting string parameter {}: '{}'", idx, &s);
                         Box::new(s) as Box<dyn ToSql + Sync>
                     }
                     // Handle Number values (maps to INTEGER, BIGINT, NUMERIC)
                     Value::Number(n) => {
+                        debug!("Converting number parameter {}: {}", idx, &n);
                         if let Some(i) = n.as_i64() {
-                            // Treat as an integer
-                            Box::new(i) as Box<dyn ToSql + Sync>
+                            // Try to fit in i32 first (PostgreSQL INT4), then fall back to i64 (BIGINT)
+                            if i >= i32::MIN as i64 && i <= i32::MAX as i64 {
+                                let i32_val = i as i32;
+                                debug!("Number {} converted to i32: {}", idx, i32_val);
+                                Box::new(i32_val) as Box<dyn ToSql + Sync>
+                            } else {
+                                debug!("Number {} converted to i64 (too large for i32): {}", idx, i);
+                                Box::new(i) as Box<dyn ToSql + Sync>
+                            }
                         } else if let Some(f) = n.as_f64() {
+                            debug!("Number {} converted to f64: {}", idx, f);
                             // Treat as a floating point number
                             Box::new(f) as Box<dyn ToSql + Sync>
                         } else {
                             // Catch numbers that are too large for i64/f64 (should be rare)
+                            error!("Number {} is too large or complex for simple SQL type: {}", idx, n);
                             panic!("JSON number too large or complex for simple SQL type.")
                         }
                     }
                     // Handle Boolean values (maps to BOOLEAN/BOOL)
                     Value::Bool(b) => {
+                        debug!("Converting boolean parameter {}: {}", idx, b);
                         Box::new(b) as Box<dyn ToSql + Sync>
                     }
                     // Handle Null values (maps to SQL NULL)
                     Value::Null => {
+                        debug!("Converting null parameter {}", idx);
                         // Option<T> is how you send NULL, using a placeholder type like &str
                         Box::new(None::<&str>) as Box<dyn ToSql + Sync>
                     }
                     // Handle Array and Object (maps to JSONB or fails for simple types)
                     // If the column expects TEXT/INT/BOOL, these are invalid
                     _ => {
+                        error!("Unsupported JSON type for parameter {}: {:?}", idx, v);
                         // If you hit this, the parameter is likely invalid for a simple column
                         panic!("Unsupported JSON type {:?} for simple database column. Arrays/Objects must be handled as JSONB.", v)
                     }
                 }
             })
             .collect();
+
+            debug!("Successfully converted {} parameters to SQL types", boxed_params.len());
 
             // 2. Map to references for the final slice
             let param_refs: Vec<&(dyn ToSql + Sync)> =
@@ -93,14 +119,24 @@ pub mod sql {
 
             // fn_call_statement looks like the following when we execute it here.
             // SELECT function_name($1, $2);
-            debug!("Executing SQL: {}", &self.fn_call_statement);
+            debug!("Executing SQL: {} with {} parameters", &self.fn_call_statement, params_slice.len());
+            debug!("Parameter slice length: {}", params_slice.len());
+            
             let res = match client.query(&self.fn_call_statement, &params_slice) {
-                Ok(r) => r,
+                Ok(r) => {
+                    debug!("SQL execution successful, got {} rows", r.len());
+                    r
+                },
                 Err(e) => {
                     error!(
-                        "Error executing sql function with: {} : Input: {:#?} : Error: {}",
-                        &self.fn_call_statement, &ingestion_params, e
+                        "PostgreSQL Error Details:"
                     );
+                    error!("  SQL Statement: {}", &self.fn_call_statement);
+                    error!("  Parameters: {:#?}", &ingestion_params);
+                    error!("  Parameter count: {}", params_slice.len());
+                    error!("  Error type: {}", std::any::type_name_of_val(&e));
+                    error!("  Error message: {}", e);
+                    error!("  Error source: {:?}", e.source());
                     return Err(ResponseCode::InternalError);
                 }
             };
@@ -400,14 +436,44 @@ pub mod sql {
             return Ok(());
         }
 
-        match client.execute(&sql, &[]) {
-            Ok(_) => {
-                info!("Applied migration {}", file_path);
-            }
+        // Parse SQL using sqlparser to handle multiple statements
+        let dialect = PostgreSqlDialect {};
+        let statements: Vec<Statement> = match Parser::parse_sql(&dialect, &sql) {
+            Ok(s) => s,
             Err(e) => {
-                return Err(format!("failed to apply migration {}: {}", file_path, e).into());
+                return Err(format!(
+                    "Failed to parse SQL in migration {}: {}",
+                    file_path, e
+                ).into());
+            }
+        };
+
+        if statements.is_empty() {
+            debug!("No statements found in migration {}", file_path);
+            return Ok(());
+        }
+
+        // Execute each statement in a transaction for atomicity
+        let mut transaction = client.transaction()?;
+        
+        for (i, statement) in statements.iter().enumerate() {
+            let sql_text = statement.to_string();
+            match transaction.execute(&sql_text, &[]) {
+                Ok(rows_affected) => {
+                    debug!("Executed statement {} in migration {} (affected {} rows)", 
+                           i + 1, file_path, rows_affected);
+                }
+                Err(e) => {
+                    return Err(format!(
+                        "Failed to execute statement {} in migration {}: {}\nStatement: {}", 
+                        i + 1, file_path, e, sql_text
+                    ).into());
+                }
             }
         }
+        
+        transaction.commit()?;
+        info!("Applied migration {} ({} statements)", file_path, statements.len());
 
         debug!("Migration timestamp: {}", migration_time);
         let migration_time: NaiveDateTime = DateTime::from_timestamp(migration_time, 0)

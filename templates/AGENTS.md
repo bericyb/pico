@@ -9,7 +9,7 @@ Pico is a PostgreSQL-based web framework where:
 - **Business logic** is implemented as **PostgreSQL functions** in the `functions/` directory
 - **Database schema** is managed through timestamped migrations in `migrations/`
 - **Static files** are served from the `public/` directory
-- **Request pipeline** consists of: PREPROCESS → SQL → POSTPROCESS → SETJWT → VIEW
+- **Request pipeline** consists of: PREPROCESS → SQL → SETJWT → POSTPROCESS → VIEW
 
 **⚠️ Important**: All SQL code must use proper PostgreSQL syntax and features. Generic SQL will not work.
 
@@ -45,13 +45,13 @@ ROUTES = {
                 req.user_id = tonumber(req.id)
                 return req
             end,
-            SQL = "get_user_by_id.sql",     -- Required: SQL function to execute
+            SQL = "get_user_by_id.sql",     -- Optional: SQL function to execute
+            SETJWT = function(resp, jwt)    -- Optional: manage authentication
+                return jwt -- or nil to clear, or new claims
+            end,
             POSTPROCESS = function(resp, jwt) -- Optional: transform response
                 resp.full_name = resp.first_name .. " " .. resp.last_name
                 return resp
-            end,
-            SETJWT = function(resp, jwt)    -- Optional: manage authentication
-                return jwt -- or nil to clear, or new claims
             end,
             VIEW = {                        -- Optional: render HTML
                 { TYPE = "MARKDOWN" }
@@ -68,7 +68,7 @@ ROUTES = {
 - Form/JSON data: `{"username": "john"}` → `username` parameter
 
 ### 3. SQL Functions
-All database operations use **PostgreSQL functions** in `functions/`:
+All database operations use **PostgreSQL functions** in `functions/` directory. They can be created with: `picos function "function_name"`
 
 **⚠️ Critical**: Use proper PostgreSQL syntax only. Generic SQL will fail.
 
@@ -91,7 +91,7 @@ $$ LANGUAGE sql;
 - PostgreSQL functions like `NOW()`, `EXTRACT()`, `AGE()`
 
 ### 4. Migrations
-Database changes are managed through timestamped migration files using **PostgreSQL DDL**:
+Database changes are managed through timestamped migration files using **PostgreSQL DDL**: created with the command `picos migrate "migration_name"`.
 
 ```sql
 -- migrations/1760820197:create_users_table.sql
@@ -131,6 +131,11 @@ picos migrate "create_posts_table"
 # or
 picos migrate "add_user_profile_fields"
 ```
+**⚠️ SQL Syntax Requirements:**
+- Use **PostgreSQL syntax only** - no MySQL, SQLite, or generic SQL
+- Prefer PostgreSQL-specific types: `TEXT`, `SERIAL`, `TIMESTAMPTZ`, `JSONB`
+- Use PostgreSQL functions: `NOW()`, `EXTRACT()`, `COALESCE()`, `CASE WHEN`
+- Leverage PostgreSQL features: CTEs, window functions, array operations
 
 #### 3. Create or Modify SQL Functions
 Determine if new PostgreSQL functions are needed:
@@ -140,7 +145,7 @@ picos function "get_user_posts"
 # or
 picos function "update_user_profile"
 ```
-**Note**: Existing functions can be edited directly without special commands.
+**Note**: Existing functions can be edited directly without special commands or creating migrations.
 
 **⚠️ SQL Syntax Requirements:**
 - Use **PostgreSQL syntax only** - no MySQL, SQLite, or generic SQL
@@ -186,7 +191,7 @@ This validation step will:
 
 When implementing features, ensure:
 1. **Parameter mapping**: Request parameter names match SQL function parameters exactly
-2. **Route structure**: Follow the PREPROCESS → SQL → POSTPROCESS → SETJWT → VIEW pipeline
+2. **Route structure**: Follow the PREPROCESS → SQL → SETJWT → POSTPROCESS → VIEW pipeline
 3. **Error handling**: Implement proper validation and error responses
 4. **Security**: Use parameterized functions and proper input validation
 
@@ -221,13 +226,6 @@ picos help                      # Show available commands
             return req
         end,
         SQL = "authenticate_user.sql",
-        POSTPROCESS = function(resp)
-            if resp.id then
-                return "Login successful"
-            else
-                return "Invalid credentials"
-            end
-        end,
         SETJWT = function(resp, jwt)
             if resp.id then
                 return {
@@ -237,6 +235,13 @@ picos help                      # Show available commands
                 }
             end
             return nil -- Clear JWT on failed login
+        end,
+        POSTPROCESS = function(resp)
+            if resp.id then
+                return "Login successful"
+            else
+                return "Invalid credentials"
+            end
         end,
         VIEW = {
             { TYPE = "MARKDOWN" },
