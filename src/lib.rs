@@ -1037,7 +1037,7 @@ pub fn validate_pico_config(
                 continue;
             }
             // Add a wildcard if parameterized
-            if seg.chars().nth(0).unwrap().to_string() == ":" {
+            if seg.starts_with(':') {
                 current = current.nodes.entry("*".to_string()).or_insert(RouteTree {
                     nodes: HashMap::new(),
                     parameter_name: seg.to_string(),
