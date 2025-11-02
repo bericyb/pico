@@ -26,5 +26,26 @@ return {
         end,
       },
     },
+    ['test-preprocess-error'] = {
+      GET = {
+        PREPROCESS = function(params, jwt)
+          error('Invalid input parameters provided')
+        end,
+      },
+    },
+    ['test-postprocess-error'] = {
+      GET = {
+        POSTPROCESS = function(obj, jwt)
+          error('Failed to format response data')
+        end,
+      },
+    },
+    ['test-setjwt-error'] = {
+      GET = {
+        SETJWT = function(obj)
+          error('Authentication failed: invalid credentials')
+        end,
+      },
+    },
   },
 }
