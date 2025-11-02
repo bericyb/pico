@@ -180,6 +180,7 @@ fn try_serve_static_file(request_path: &str) -> Result<Vec<u8>, ResponseCode> {
 }
 
 pub struct PicoService {
+    port: String,
     secret_key: String,
     lua: Lua,
     sql: SQL,
@@ -260,7 +261,7 @@ pub fn create_pico_service(
         }
     };
 
-    let (db, routes, route_tree, crons) = match validate_pico_config(pico_config_table) {
+    let (port, db, routes, route_tree, crons) = match validate_pico_config(pico_config_table) {
         Ok(r) => r,
         Err(es) => return Err(format!("error validating pico config: {}", es)),
     };
@@ -293,6 +294,7 @@ pub fn create_pico_service(
     let secret_key = std::env::var("PICO_SECRET_KEY").unwrap_or("default_secret".to_string());
 
     return Ok(PicoService {
+        port,
         secret_key,
         lua,
         sql,
@@ -373,9 +375,7 @@ pub fn create_pico_function() {
 
 impl PicoService {
     pub fn start_http_server(&mut self) -> std::io::Result<()> {
-        // For now let's just bind on 8080.
-        // TODO: Get port from pico config
-        let listener = TcpListener::bind("127.0.0.1:8080")?;
+        let listener = TcpListener::bind(format!("127.0.0.1:{}", self.port))?;
 
         info!("Pico server listening on {}", listener.local_addr()?);
 
@@ -495,13 +495,10 @@ impl PicoService {
                         for param in function.parameters.clone() {
                             let val = match j_body.get(&param.clone()) {
                                 Some(b_val) => b_val,
-                                None => {
-                                    match route_parameters.get(&param.clone()) {
-                                        Some(rp_val) => &Value::String(rp_val.to_string()),
-                                        // TODO: add required parameter missing code
-                                        None => return Err(ResponseCode::BadRequest),
-                                    }
-                                }
+                                None => match route_parameters.get(&param.clone()) {
+                                    Some(rp_val) => &Value::String(rp_val.to_string()),
+                                    None => return Err(ResponseCode::BadRequest),
+                                },
                             };
                             function_input.insert(param, val.clone());
                         }
@@ -510,13 +507,10 @@ impl PicoService {
                         for param in function.parameters.clone() {
                             let val = match hash_map.get(&param.clone()) {
                                 Some(qp) => qp,
-                                None => {
-                                    match route_parameters.get(&param.clone()) {
-                                        Some(rp_val) => &rp_val.to_string(),
-                                        // TODO: add required parameter missing code
-                                        None => return Err(ResponseCode::BadRequest),
-                                    }
-                                }
+                                None => match route_parameters.get(&param.clone()) {
+                                    Some(rp_val) => &rp_val.to_string(),
+                                    None => return Err(ResponseCode::BadRequest),
+                                },
                             };
                             function_input.insert(param, Value::String(val.clone()));
                         }
@@ -634,7 +628,7 @@ impl PicoService {
             };
         }
 
-        // TODO: SETJWT
+        // SETJWT
         let mut headers: HashMap<String, Vec<String>> = HashMap::new();
         if let Some(set_jwt_fn) = &route_handler.set_jwt {
             debug!("Setting JWT using lua function");
@@ -736,7 +730,23 @@ impl PicoService {
 // Validate and serialize fields from pico configurations
 pub fn validate_pico_config(
     config: mlua::Table,
-) -> Result<(String, HashMap<String, Route>, RouteTree, Option<Crons>), String> {
+) -> Result<
+    (
+        String,
+        String,
+        HashMap<String, Route>,
+        RouteTree,
+        Option<Crons>,
+    ),
+    String,
+> {
+    let port: String = match config.get("PORT") {
+        Ok(p) => p,
+        Err(_) => {
+            info!("PORT not specified, using port 8080");
+            "8080".to_string()
+        }
+    };
     let db: String;
     match config.get("DB") {
         Ok(l_db) => {
@@ -861,12 +871,10 @@ pub fn validate_pico_config(
     for (route, _) in &routes {
         debug!("Creating route {}", route);
         for seg in route.split("/") {
-            // TODO: is this correct and needs an underscore for lint?
             let mut _current = &mut route_tree;
             if seg.is_empty() {
                 continue;
             }
-
             // Add a wildcard if parameterized
             if seg.chars().nth(0).unwrap().to_string() == ":" {
                 _current = _current.nodes.entry("*".to_string()).or_insert(RouteTree {
@@ -881,13 +889,15 @@ pub fn validate_pico_config(
             }
         }
     }
+
+    // TODO: implement crons
     // let crons: Option<Crons> = match config.get("CRONS") {
     //     Ok(c) => c,
     //     Err(e) => return Err(format!("invalid pico config: CRONS field not found. {}", e)),
     // };
     //
 
-    return Ok((db, routes, route_tree, None));
+    return Ok((port, db, routes, route_tree, None));
 }
 
 #[cfg(test)]

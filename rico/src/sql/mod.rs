@@ -297,7 +297,6 @@ pub mod sql {
             Ok(None) => 0, // default to epoch
             Err(e) => return Err(format!("db error while applying migrations: {}", e).into()),
         };
-        // TODO: allow for custom migrations directory in pico config
         let dir_entries = match fs::read_dir("migrations/") {
             Ok(des) => des,
             Err(e) => {
