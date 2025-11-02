@@ -10,11 +10,14 @@ const AGENTS_TEMPLATE: &str = include_str!("../templates/AGENTS.md");
 // SQL Migration Templates
 const MIGRATION_PGCRYPTO_TEMPLATE: &str = include_str!("../templates/migration_pgcrypto.sql");
 const MIGRATION_USERS_TABLE_TEMPLATE: &str = include_str!("../templates/migration_users_table.sql");
-const MIGRATION_PING_COUNTER_TEMPLATE: &str = include_str!("../templates/migration_ping_counter.sql");
+const MIGRATION_PING_COUNTER_TEMPLATE: &str =
+    include_str!("../templates/migration_ping_counter.sql");
 
 // SQL Function Templates
-const FUNCTION_AUTHENTICATE_USER_TEMPLATE: &str = include_str!("../templates/function_authenticate_user.sql");
-const FUNCTION_REGISTER_USER_TEMPLATE: &str = include_str!("../templates/function_register_user.sql");
+const FUNCTION_AUTHENTICATE_USER_TEMPLATE: &str =
+    include_str!("../templates/function_authenticate_user.sql");
+const FUNCTION_REGISTER_USER_TEMPLATE: &str =
+    include_str!("../templates/function_register_user.sql");
 const FUNCTION_PONG_TEMPLATE: &str = include_str!("../templates/function_pong.sql");
 const FUNCTION_TEMPLATE: &str = include_str!("../templates/function_template.sql");
 
@@ -68,7 +71,10 @@ fn main() -> std::io::Result<()> {
             }
 
             // Make SQL migration templates available to the Lua script
-            match lua.globals().set("MIGRATION_PGCRYPTO_TEMPLATE", MIGRATION_PGCRYPTO_TEMPLATE) {
+            match lua
+                .globals()
+                .set("MIGRATION_PGCRYPTO_TEMPLATE", MIGRATION_PGCRYPTO_TEMPLATE)
+            {
                 Ok(_) => {}
                 Err(e) => {
                     error!("Failed to load pgcrypto migration template: {}", e);
@@ -76,7 +82,10 @@ fn main() -> std::io::Result<()> {
                 }
             }
 
-            match lua.globals().set("MIGRATION_USERS_TABLE_TEMPLATE", MIGRATION_USERS_TABLE_TEMPLATE) {
+            match lua.globals().set(
+                "MIGRATION_USERS_TABLE_TEMPLATE",
+                MIGRATION_USERS_TABLE_TEMPLATE,
+            ) {
                 Ok(_) => {}
                 Err(e) => {
                     error!("Failed to load users table migration template: {}", e);
@@ -84,7 +93,10 @@ fn main() -> std::io::Result<()> {
                 }
             }
 
-            match lua.globals().set("MIGRATION_PING_COUNTER_TEMPLATE", MIGRATION_PING_COUNTER_TEMPLATE) {
+            match lua.globals().set(
+                "MIGRATION_PING_COUNTER_TEMPLATE",
+                MIGRATION_PING_COUNTER_TEMPLATE,
+            ) {
                 Ok(_) => {}
                 Err(e) => {
                     error!("Failed to load ping counter migration template: {}", e);
@@ -93,7 +105,10 @@ fn main() -> std::io::Result<()> {
             }
 
             // Make SQL function templates available to the Lua script
-            match lua.globals().set("FUNCTION_AUTHENTICATE_USER_TEMPLATE", FUNCTION_AUTHENTICATE_USER_TEMPLATE) {
+            match lua.globals().set(
+                "FUNCTION_AUTHENTICATE_USER_TEMPLATE",
+                FUNCTION_AUTHENTICATE_USER_TEMPLATE,
+            ) {
                 Ok(_) => {}
                 Err(e) => {
                     error!("Failed to load authenticate user function template: {}", e);
@@ -101,7 +116,10 @@ fn main() -> std::io::Result<()> {
                 }
             }
 
-            match lua.globals().set("FUNCTION_REGISTER_USER_TEMPLATE", FUNCTION_REGISTER_USER_TEMPLATE) {
+            match lua.globals().set(
+                "FUNCTION_REGISTER_USER_TEMPLATE",
+                FUNCTION_REGISTER_USER_TEMPLATE,
+            ) {
                 Ok(_) => {}
                 Err(e) => {
                     error!("Failed to load register user function template: {}", e);
@@ -109,7 +127,10 @@ fn main() -> std::io::Result<()> {
                 }
             }
 
-            match lua.globals().set("FUNCTION_PONG_TEMPLATE", FUNCTION_PONG_TEMPLATE) {
+            match lua
+                .globals()
+                .set("FUNCTION_PONG_TEMPLATE", FUNCTION_PONG_TEMPLATE)
+            {
                 Ok(_) => {}
                 Err(e) => {
                     error!("Failed to load pong function template: {}", e);
