@@ -1,7 +1,7 @@
 [package]
 name = "picos"
 description = "A minimal web application framework with Lua scripting and PostgreSQL integration."
-version = "0.1.1"
+version = "0.1.2"
 edition = "2024"
 license = "MIT"
 authors = ["Beric Bearnson"]
@@ -34,7 +34,3 @@ path = "src/lib.rs"
 [[bin]]
 name = "picos"
 path = "src/main.rs"
-
-[[bin]]
-name = "scratchpad"
-path = "src/scratchpad/bin/main.rs"
