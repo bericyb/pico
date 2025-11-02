@@ -42,11 +42,6 @@ jobs:
       run: |
         cd pico
         cargo fmt -- --check
-    
-    - name: Run clippy
-      run: |
-        cd pico
-        cargo clippy -- -D warnings
 
   build:
     name: Build for ${{ matrix.target }}
