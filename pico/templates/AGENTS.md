@@ -6,10 +6,12 @@ This guide helps AI assistants understand and effectively work with Pico project
 
 Pico is a PostgreSQL-based web framework where:
 - **Routes** are defined as Lua tables in `config.lua`
-- **Business logic** is implemented as PostgreSQL functions in the `functions/` directory
+- **Business logic** is implemented as **PostgreSQL functions** in the `functions/` directory
 - **Database schema** is managed through timestamped migrations in `migrations/`
 - **Static files** are served from the `public/` directory
 - **Request pipeline** consists of: PREPROCESS → SQL → POSTPROCESS → SETJWT → VIEW
+
+**⚠️ Important**: All SQL code must use proper PostgreSQL syntax and features. Generic SQL will not work.
 
 ## Project Structure
 
@@ -66,7 +68,9 @@ ROUTES = {
 - Form/JSON data: `{"username": "john"}` → `username` parameter
 
 ### 3. SQL Functions
-All database operations use PostgreSQL functions in `functions/`:
+All database operations use **PostgreSQL functions** in `functions/`:
+
+**⚠️ Critical**: Use proper PostgreSQL syntax only. Generic SQL will fail.
 
 ```sql
 -- functions/create_user.sql
@@ -78,41 +82,132 @@ RETURNS TABLE(id int, created_at timestamp) AS $$
 $$ LANGUAGE sql;
 ```
 
+**PostgreSQL-specific features to use:**
+- `SERIAL` and `BIGSERIAL` for auto-incrementing IDs
+- `TIMESTAMP` and `TIMESTAMPTZ` for dates
+- `TEXT` type for strings (preferred over VARCHAR)
+- `JSONB` for JSON data
+- Array types like `TEXT[]`
+- PostgreSQL functions like `NOW()`, `EXTRACT()`, `AGE()`
+
 ### 4. Migrations
-Database changes are managed through timestamped migration files:
+Database changes are managed through timestamped migration files using **PostgreSQL DDL**:
+
 ```sql
 -- migrations/1760820197:create_users_table.sql
+-- Use PostgreSQL-specific syntax and types
 CREATE TABLE IF NOT EXISTS users (
-    id SERIAL PRIMARY KEY,
+    id SERIAL PRIMARY KEY,                    -- PostgreSQL SERIAL type
     username VARCHAR(50) UNIQUE NOT NULL,
     email VARCHAR(255) UNIQUE NOT NULL,
     password_hash VARCHAR(255) NOT NULL,
-    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,  -- PostgreSQL TIMESTAMP
+    metadata JSONB,                          -- PostgreSQL JSONB type
+    tags TEXT[]                              -- PostgreSQL array type
 );
+
+-- PostgreSQL-specific indexes
+CREATE INDEX CONCURRENTLY IF NOT EXISTS idx_users_email ON users(email);
+CREATE INDEX IF NOT EXISTS idx_users_metadata ON users USING GIN(metadata);
 ```
 
 ## Development Guidelines for AI Assistants
 
-### When Adding Features
+### Recommended Development Workflow
 
-1. **Always check parameter mapping**: Ensure request parameter names match SQL function parameters exactly
-2. **Create migrations first**: Define database schema before writing functions
-3. **Write SQL functions**: Implement business logic in PostgreSQL
-4. **Define routes**: Connect HTTP endpoints to SQL functions via `config.lua`
-5. **Test the complete pipeline**: Verify PREPROCESS → SQL → POSTPROCESS flow
+Follow this systematic approach when implementing new features or modifications:
 
-### Database Operations
+#### 1. Database Schema Analysis
+First, determine if your changes require database schema modifications:
+- Review existing tables and columns
+- Identify if new tables, columns, or constraints are needed
+- Check if existing data types need to be changed
 
-**Creating new tables:**
+#### 2. Create Migrations (if needed)
+If database schema changes are required:
 ```bash
-# Use admin.lua to generate migration
-lua admin.lua migrate "create_posts_table"
+# Create a new migration using the Pico admin tool
+picos migrate "create_posts_table"
+# or
+picos migrate "add_user_profile_fields"
 ```
 
-**Adding SQL functions:**
+#### 3. Create or Modify SQL Functions
+Determine if new PostgreSQL functions are needed:
 ```bash
-# Use admin.lua to generate function template
-lua admin.lua function "get_user_posts"
+# Create a new function template
+picos function "get_user_posts" 
+# or
+picos function "update_user_profile"
+```
+**Note**: Existing functions can be edited directly without special commands.
+
+**⚠️ SQL Syntax Requirements:**
+- Use **PostgreSQL syntax only** - no MySQL, SQLite, or generic SQL
+- Prefer PostgreSQL-specific types: `TEXT`, `SERIAL`, `TIMESTAMPTZ`, `JSONB`
+- Use PostgreSQL functions: `NOW()`, `EXTRACT()`, `COALESCE()`, `CASE WHEN`
+- Leverage PostgreSQL features: CTEs, window functions, array operations
+
+#### 4. Update Routes (if needed)
+Modify `config.lua` to add new routes or update existing ones.
+
+#### 5. Validate Configuration
+**Critical**: After any changes to migrations, functions, or `config.lua`, always validate:
+```bash
+# Validate the current configuration
+picos validate
+# or use the short flag
+picos -v
+# or validate a specific config file
+picos validate path/to/config.lua
+```
+
+This validation step will:
+- ✅ Verify Lua syntax in `config.lua`
+- ✅ Check route definitions and parameter mapping
+- ✅ Confirm all referenced SQL functions exist
+- ✅ Validate database connection string
+- ✅ Display summary of routes and methods
+
+**Example successful validation output:**
+```
+✅ Configuration validation successful!
+   Port: 8080
+   Database: postgresql://postgres:password@0.0.0.0:5432/pico
+   Routes found: 6
+   - register (methods: POST, GET)
+   - ping (methods: GET)
+   - login (methods: GET, POST)
+   - logout (methods: POST)
+   - test-jwt (methods: GET)
+```
+
+#### 6. Implementation Guidelines
+
+When implementing features, ensure:
+1. **Parameter mapping**: Request parameter names match SQL function parameters exactly
+2. **Route structure**: Follow the PREPROCESS → SQL → POSTPROCESS → SETJWT → VIEW pipeline
+3. **Error handling**: Implement proper validation and error responses
+4. **Security**: Use parameterized functions and proper input validation
+
+### Admin Commands Reference
+
+**Configuration validation:**
+```bash
+picos validate [config_file]    # Validate configuration
+picos -v [config_file]          # Short form
+```
+
+**Database operations:**
+```bash
+picos migrate "migration_name"  # Create new migration
+picos function "function_name"  # Create new SQL function template
+```
+
+**Project initialization:**
+```bash
+picos init                      # Initialize new Pico project
+picos help                      # Show available commands
 ```
 
 ### Common Patterns
@@ -221,12 +316,16 @@ $$ LANGUAGE plpgsql;
 
 **Creating SQL functions:** Use `Write` tool to add new `.sql` files in `functions/` directory
 
+**Validating changes:** Always run `picos validate` after creating or modifying configuration files
+
 ### Testing and Debugging
 
-1. **Test parameter flow**: Verify request data reaches SQL functions correctly
-2. **Check SQL syntax**: Ensure PostgreSQL functions are valid
-3. **Validate JWT flow**: Confirm authentication state management
-4. **Test static files**: Verify assets are accessible from `public/`
+1. **Configuration validation**: Use `picos validate` to check syntax and configuration
+2. **Parameter flow**: Verify request data reaches SQL functions correctly
+3. **SQL syntax**: Ensure PostgreSQL functions are valid
+4. **JWT flow**: Confirm authentication state management
+5. **Static files**: Verify assets are accessible from `public/`
+6. **Route testing**: Test each endpoint with different HTTP methods
 
 ## View System
 
@@ -296,10 +395,11 @@ Place your SPA in `public/index.html` and create API routes under `api/` prefix 
 5. **SQL syntax errors**: PostgreSQL function syntax issues
 
 **Debugging steps:**
-1. Check `config.lua` syntax and route structure
-2. Verify SQL function parameter names match request parameters
-3. Ensure migrations create necessary tables and columns
-4. Test SQL functions independently in PostgreSQL
-5. Validate JWT token structure and claims
+1. **Always start with validation**: Run `picos validate` to catch configuration issues early
+2. Check `config.lua` syntax and route structure
+3. Verify SQL function parameter names match request parameters
+4. Ensure migrations create necessary tables and columns
+5. Test SQL functions independently in PostgreSQL
+6. Validate JWT token structure and claims
 
 This framework prioritizes simplicity and rapid development while maintaining the power and reliability of PostgreSQL as the core business logic layer.
