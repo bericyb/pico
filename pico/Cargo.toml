@@ -7,7 +7,7 @@ license = "MIT"
 authors = ["Beric Bearnson"]
 repository = "https://github.com/bericyb/pico"
 keywords = ["web", "framework", "lua", "postgresql", "scripting", "minimal"]
-exclude = ["/scratchpad/*", "/docs/*", "/examples/*", "docker-compose.yml", "Dockerfile", ".github/*"]
+exclude = ["/scratchpad/*", "/docs/*", "/examples/*", "docker-compose.yaml", ".github/*"]
 
 [dependencies]
 chrono = "0.4.42"
