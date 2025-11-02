@@ -133,12 +133,16 @@ pub mod html {
                             .expect("Failed to render table template")
                     }
                     Entity::Object => {
-                        let json_pretty = serde_json::to_string_pretty(&data).unwrap_or_else(|_| "{}".to_string());
-                        
+                        let json_pretty = serde_json::to_string_pretty(&data)
+                            .unwrap_or_else(|_| "{}".to_string());
+
                         // For better user experience, provide structured display data
                         let mut context = serde_json::Map::new();
-                        context.insert("json_pretty".to_string(), serde_json::Value::String(json_pretty));
-                        
+                        context.insert(
+                            "json_pretty".to_string(),
+                            serde_json::Value::String(json_pretty),
+                        );
+
                         // Copy the original data fields for the card-based display (excluding json_pretty)
                         if let serde_json::Value::Object(obj) = &data {
                             for (key, value) in obj {
@@ -147,7 +151,7 @@ pub mod html {
                                 }
                             }
                         }
-                        
+
                         handlebars
                             .render("object", &serde_json::Value::Object(context))
                             .expect("Failed to render object template")

@@ -913,6 +913,4 @@ mod tests {
         assert_eq!(get_mime_type("image.jpg"), "image/jpeg");
         assert_eq!(get_mime_type("unknown.xyz"), "application/octet-stream");
     }
-
-
 }
