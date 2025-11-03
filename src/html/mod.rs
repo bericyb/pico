@@ -116,16 +116,37 @@ pub mod html {
                             .render("markdown", &context)
                             .expect("Failed to render markdown template")
                     }
-                    Entity::Table(table) => {
-                        // Extract rows from data based on table structure
+                    Entity::Table(_table) => {
+                        // Extract rows from data
                         let rows = if let serde_json::Value::Array(array) = &data {
                             array.clone()
                         } else {
                             vec![data.clone()]
                         };
 
+                        // Auto-detect columns from the first row if we have data
+                        let columns: Vec<Column> = if let Some(first_row) = rows.first() {
+                            if let serde_json::Value::Object(obj) = first_row {
+                                obj.keys()
+                                    .map(|key| Column {
+                                        name: key.clone(),
+                                        accessor: Some(key.clone()),
+                                    })
+                                    .collect()
+                            } else {
+                                // For non-object data, create a single "value" column
+                                vec![Column {
+                                    name: "value".to_string(),
+                                    accessor: None,
+                                }]
+                            }
+                        } else {
+                            // No data, no columns
+                            vec![]
+                        };
+
                         let context = json!({
-                            "columns": table.columns,
+                            "columns": columns,
                             "rows": rows
                         });
                         handlebars
@@ -310,7 +331,13 @@ pub mod html {
                             "MARKDOWN" => {
                                 view.entities.push(Entity::Markdown);
                             }
-                            "TABLE" => {}
+                            "TABLE" => {
+                                // For flexible tables, we don't need to parse column definitions
+                                // Instead, we'll auto-detect columns from the data at render time
+                                view.entities.push(Entity::Table(HtmlTable { 
+                                    columns: vec![] // Empty - will be populated dynamically
+                                }));
+                            }
                             "OBJECT" => {
                                 view.entities.push(Entity::Object);
                             }

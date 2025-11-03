@@ -98,21 +98,45 @@ Renders JSON objects in a structured display format.
 
 ### 5. TABLE
 
-Renders data in tabular format (currently in development).
+Renders data in tabular format. The table view automatically detects columns from your data structure, making it extremely flexible for displaying any array of objects.
 
 ```lua
 {
-    TYPE = "TABLE",
-    COLUMNS = {
-        { name = "Name", accessor = "name" },
-        { name = "Email", accessor = "email" }
-    }
+    TYPE = "TABLE"
 }
 ```
 
-## Complete Route Example
+**How it works:**
+- **For arrays of objects**: Automatically creates columns based on the keys of the first object
+- **For single objects**: Displays as a single-row table
+- **For primitive values**: Creates a simple "value" column
 
-Here's a comprehensive example showing how Views integrate with other route handlers:
+**Example data structures that work:**
+
+```lua
+-- Array of user objects
+[
+    { name = "John", email = "john@example.com", age = 30 },
+    { name = "Jane", email = "jane@example.com", age = 25 }
+]
+-- Creates columns: name, email, age
+
+-- Single object
+{ name = "John", email = "john@example.com", age = 30 }
+-- Creates a single-row table with columns: name, email, age
+
+-- Array of simple values
+["apple", "banana", "cherry"]
+-- Creates a single "value" column
+```
+
+The TABLE view requires no configuration - simply set `TYPE = "TABLE"` and it will automatically adapt to your data structure.
+
+## Complete Route Examples
+
+Here are comprehensive examples showing how Views integrate with other route handlers:
+
+### Login Form Example
 
 ```lua
 ['login'] = {
@@ -158,6 +182,37 @@ Here's a comprehensive example showing how Views integrate with other route hand
     }
 }
 ```
+
+### Table View Example
+
+```lua
+['users'] = {
+    GET = {
+        SQL = 'get_users.sql',  -- Returns array of user objects
+        VIEW = {
+            {
+                TYPE = 'TABLE'  -- Automatically creates table from user data
+            },
+            {
+                TYPE = 'LINKS',
+                LINKS = {
+                    { value = 'user/new', label = 'Add New User' }
+                }
+            }
+        }
+    }
+}
+```
+
+If your `get_users.sql` returns:
+```json
+[
+    { "id": 1, "username": "john_doe", "email": "john@example.com", "created_at": "2023-01-15" },
+    { "id": 2, "username": "jane_smith", "email": "jane@example.com", "created_at": "2023-01-20" }
+]
+```
+
+The table view will automatically create a table with columns: id, username, email, created_at.
 
 ## View Rendering Process
 

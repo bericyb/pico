@@ -71,12 +71,16 @@ if flag == 'init' then
     print('Created: ' .. name .. 'functions/pong.sql')
   end
 elseif flag == 'migrate' or flag == 'm' then
-  io.write 'Migration name: '
-  local input = io.read '*l'
+  local input = arg[2]
+  
+  if not input then
+    io.write 'Migration name: '
+    input = io.read '*l'
 
-  if input == nil then
-    print 'Error: Could not read migration name.'
-    return
+    if input == nil then
+      print 'Error: Could not read migration name.'
+      return
+    end
   end
 
   input = string.gsub(input, ' ', '_')
@@ -100,12 +104,16 @@ elseif flag == 'migrate' or flag == 'm' then
     print(string.format('migration creation failed: %s', err))
   end
 elseif flag == 'function' or flag == 'f' then
-  io.write 'SQL function name: '
-  local input = io.read '*l'
+  local input = arg[2]
+  
+  if not input then
+    io.write 'SQL function name: '
+    input = io.read '*l'
 
-  if input == nil then
-    print 'Error reading input.'
-    return
+    if input == nil then
+      print 'Error reading input.'
+      return
+    end
   end
 
   input = string.gsub(input, ' ', '_')
@@ -132,7 +140,16 @@ elseif flag == 'function' or flag == 'f' then
     return
   end
 
-  local content = string.gsub(FUNCTION_TEMPLATE, '{name}', input)
+  -- Read template content from file
+  local template_file = io.open('templates/function_template.sql', 'r')
+  if not template_file then
+    print('Error: Could not find templates/function_template.sql')
+    return
+  end
+  local template_content = template_file:read('*all')
+  template_file:close()
+
+  local content = string.gsub(template_content, '{name}', input)
 
   local success, write_err = file:write(content)
 

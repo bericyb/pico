@@ -58,10 +58,18 @@ pub mod sql {
                     Value::Object(_) => "Object",
                 });
                 match v {
-                    // Handle String values (maps to TEXT/VARCHAR)
+                    // Handle String values (maps to TEXT/VARCHAR or DATE if parseable)
                     Value::String(s) => {
                         debug!("Converting string parameter {}: '{}'", idx, &s);
-                        Box::new(s) as Box<dyn ToSql + Sync>
+                        
+                        // Try to parse as date first (YYYY-MM-DD format)
+                        if let Ok(date) = NaiveDate::parse_from_str(&s, "%Y-%m-%d") {
+                            debug!("String parameter {} parsed as date: {}", idx, date);
+                            Box::new(date) as Box<dyn ToSql + Sync>
+                        } else {
+                            debug!("String parameter {} kept as string", idx);
+                            Box::new(s) as Box<dyn ToSql + Sync>
+                        }
                     }
                     // Handle Number values (maps to INTEGER, BIGINT, NUMERIC)
                     Value::Number(n) => {

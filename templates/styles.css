@@ -105,13 +105,14 @@ label {
 
 input {
     width: 100%;
-    padding: 0.75rem;
+    padding: 0.75rem 0.75rem;
     border: 2px solid #e1e8ed;
     border-radius: 6px;
     font-size: 1rem;
     margin-bottom: 1rem;
     transition: border-color 0.2s ease;
     background-color: #fff;
+    box-sizing: border-box;
 }
 
 input:focus {

@@ -10,7 +10,13 @@
         {{#each rows}}
         <tr>
             {{#each ../columns}}
-            <td>{{lookup ../this (if accessor accessor name)}}</td>
+            <td>
+                {{#if accessor}}
+                    {{lookup ../this accessor}}
+                {{else}}
+                    {{../this}}
+                {{/if}}
+            </td>
             {{/each}}
         </tr>
         {{/each}}
