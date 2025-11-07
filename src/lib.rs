@@ -9,6 +9,7 @@ use std::{
     io::{self, Read, Write},
     net::TcpListener,
     path::Path,
+    process::Command,
 };
 
 use chrono::Utc;
@@ -244,6 +245,7 @@ fn try_serve_static_file(request_path: &str) -> Result<Vec<u8>, ResponseCode> {
 }
 
 pub struct PicoService {
+    admin_enabled: bool,
     port: String,
     secret_key: String,
     lua: Lua,
@@ -264,11 +266,11 @@ impl RouteTree {
     pub fn to_string(&self) -> String {
         self.to_string_with_indent(0)
     }
-    
+
     fn to_string_with_indent(&self, indent: usize) -> String {
         let mut res = String::new();
         let indent_str = "  ".repeat(indent);
-        
+
         for (key, node) in &self.nodes {
             res.push_str(&format!("{}{}:\n", indent_str, key));
             res.push_str(&node.to_string_with_indent(indent + 1));
@@ -363,6 +365,7 @@ pub fn create_pico_service(
     let secret_key = std::env::var("PICO_SECRET_KEY").unwrap_or("default_secret".to_string());
 
     return Ok(PicoService {
+        admin_enabled: true,
         port,
         secret_key,
         lua,
@@ -456,6 +459,24 @@ impl PicoService {
         for (route_path, route) in &self.routes {
             let methods: Vec<String> = route.definitions.keys().map(|m| m.to_string()).collect();
             debug!("  {} -> [{}]", route_path, methods.join(", "));
+        }
+
+        if self.admin_enabled {
+            let admin_listener = TcpListener::bind("127.0.0.1:8081")?;
+            println!(
+                "Pico admin interface enabled and listening on: {}",
+                admin_listener.local_addr()?
+            );
+            // Spawn admin interface thread
+            std::thread::spawn(move || {
+                for stream in admin_listener.incoming() {
+                    let mut s = stream.unwrap();
+                    let response = PicoResponse::success(b"Reloading server...".to_vec());
+                    s.write(&response.to_http_bytes()).unwrap();
+                    info!("Admin requested server reload, exiting...");
+                    restart_pico_process();
+                }
+            });
         }
 
         for stream in listener.incoming() {
@@ -1059,6 +1080,20 @@ pub fn validate_pico_config(
     //
 
     return Ok((port, db, routes, route_tree, None));
+}
+
+fn restart_pico_process() {
+    let args: Vec<String> = std::env::args().collect();
+    let exe_path = std::env::current_exe().unwrap();
+
+    info!("Restarting pico process...");
+
+    Command::new(exe_path)
+        .args(&args[1..])
+        .spawn()
+        .expect("Failed to restart pico process");
+
+    std::process::exit(0);
 }
 
 #[cfg(test)]

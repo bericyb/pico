@@ -26,6 +26,12 @@ if flag == 'init' then
   agents_file:close()
   print('Created: ' .. name .. 'AGENTS.md')
 
+  -- Generate .stylua.toml file
+  local stylua_file = assert(io.open(name .. '.stylua.toml', 'w'))
+  stylua_file:write(STYLUA_TEMPLATE)
+  stylua_file:close()
+  print('Created: ' .. name .. '.stylua.toml')
+
   print 'Would you like to generate any migrations (m), functions (f), both (a) or not (n)?'
   local input = io.read '*l'
   if input == 'm' or input == 'a' then

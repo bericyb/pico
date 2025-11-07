@@ -8,6 +8,7 @@ const ADMIN_SCRIPT: &str = include_str!("../../admin.lua");
 const CONFIG_TEMPLATE: &str = include_str!("../../templates/config.lua");
 const STYLES_TEMPLATE: &str = include_str!("../../templates/styles.css");
 const AGENTS_TEMPLATE: &str = include_str!("../../templates/AGENTS.md");
+const STYLUA_TEMPLATE: &str = include_str!("../../templates/.stylua.toml");
 
 // SQL Migration Templates
 const MIGRATION_PGCRYPTO_TEMPLATE: &str = include_str!("../../templates/migration_pgcrypto.sql");
@@ -122,6 +123,7 @@ pub fn run_admin(args: Vec<String>) -> std::io::Result<()> {
         ("CONFIG_TEMPLATE", CONFIG_TEMPLATE),
         ("STYLES_TEMPLATE", STYLES_TEMPLATE),
         ("AGENTS_TEMPLATE", AGENTS_TEMPLATE),
+        ("STYLUA_TEMPLATE", STYLUA_TEMPLATE),
         ("MIGRATION_PGCRYPTO_TEMPLATE", MIGRATION_PGCRYPTO_TEMPLATE),
         ("MIGRATION_USERS_TABLE_TEMPLATE", MIGRATION_USERS_TABLE_TEMPLATE),
         ("MIGRATION_PING_COUNTER_TEMPLATE", MIGRATION_PING_COUNTER_TEMPLATE),
